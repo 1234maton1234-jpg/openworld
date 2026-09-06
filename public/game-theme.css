@@ -1,0 +1,8 @@
+:root{--green:#171717;--paper:#fff;--muted:#737373;--line:#d8d8d8;color:#222}header,footer,.panel,dialog{background:#fffffff2;color:#222;border-color:#ddd}.brand{font:700 25px Consolas,monospace;letter-spacing:-.06em}.brand span{font-size:8px;letter-spacing:.1em}.dark,#toast{background:#171717;color:#fff}.dark:hover{background:#333}button{border-radius:12px;color:#222;background:#fafafa;border-color:#ddd}button:hover{background:#eee}.panel{border-radius:5px}.sky-toolbar button{background:#fffffff0}.intro h1,.panel h2{font-family:"Microsoft YaHei",sans-serif}.intro p:not(.eyebrow){color:#444}#coordinates input{background:#eee;color:#222}#walk-hud p{background:#171717dd}#town-time{accent-color:#222}@media(max-width:720px){.brand{font-size:19px}}
+.dark{border-radius:12px}#coordinates button{border-radius:10px}
+body[data-land="true"] .intro{display:none}
+body[data-land="true"] .plot-panel{max-height:calc(100vh - 190px);overflow-y:auto}
+#land-editor{margin:12px 0;font-size:12px}
+#land-editor details{margin:10px 0}
+#land-editor input{width:100%;box-sizing:border-box}
+#land-status{line-height:1.6}

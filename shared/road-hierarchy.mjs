@@ -1,0 +1,1 @@
+export function roadProfile(id){const [direction,x,z]=id.split(':'),axis=Number(direction==='v'?x:z);return axis%4===0?{class:'arterial',width:28}:axis%2===0?{class:'collector',width:18}:{class:'local',width:10};}

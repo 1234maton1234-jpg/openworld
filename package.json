@@ -1,0 +1,15 @@
+{
+  "name": "openworld",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22.13.0"},
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "dev": "node --env-file-if-exists=.env server/index.mjs --demo",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {"express":"5.2.1","@gltf-transform/core":"4.2.1","gltf-validator":"2.0.0-dev.3.10","sharp":"0.35.4","three":"0.180.0"},
+  "devDependencies": {"esbuild":"0.25.12"}
+}
