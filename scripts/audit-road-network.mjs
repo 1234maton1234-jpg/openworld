@@ -4,10 +4,10 @@ import {buildRoadNetwork} from '../shared/road-network.mjs';
 import {archRoad} from '../shared/bridge-arch.mjs';
 import assert from 'node:assert/strict';
 
-const store=createStore(':memory:'),reports=[];
+const store=(await createStore(':memory:')),reports=[];
 try{
   for(const [x,z] of [[0,0],[16,0],[280,288],[288,296],[-16,-8]]){
-    const plan=store.planner.around(x,z),roads=plan.roads,bridges=roads.filter(r=>r.bridge),ids=new Set(roads.map(r=>r.id));assert.equal(ids.size,roads.length);
+    const plan=(await store.planner.around(x,z)),roads=plan.roads,bridges=roads.filter(r=>r.bridge),ids=new Set(roads.map(r=>r.id));assert.equal(ids.size,roads.length);
     const raw=[...new Map(plan.regions.flatMap(r=>r.roads).map(r=>[r.id,r])).values()].map(archRoad),normalized=buildRoadNetwork(raw);
     assert.deepEqual(normalized,buildRoadNetwork(raw.toReversed()));
     const rawLength=raw.reduce((sum,r)=>sum+r.points.slice(1).reduce((n,p,i)=>n+Math.hypot(p[0]-r.points[i][0],p[2]-r.points[i][2]),0),0);
@@ -18,4 +18,4 @@ try{
     reports.push({x,z,roads:roads.length,bridges:bridges.length,segments,uniqueEdges:graph.edges.size,duplicateLengthRemoved:Math.round(rawLength-length)});
   }
   console.log(JSON.stringify(reports,null,2));
-}finally{store.close();}
+}finally{(await store.close());}

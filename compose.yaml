@@ -8,9 +8,28 @@ services:
       HOST: 0.0.0.0
       PORT: 8787
       DATA_DIR: /app/data
+      DATABASE_URL: postgresql://openworld:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/openworld
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8787:8787"
     volumes:
       - town-data:/app/data
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openworld
+      POSTGRES_DB: openworld
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openworld -d openworld"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 volumes:
   town-data:
+  postgres-data:

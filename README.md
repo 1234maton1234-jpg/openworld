@@ -56,23 +56,25 @@ npm run dev
 
 ## 部署
 
-此版本采用 **单实例 Node + SQLite + 持久文件存储**，适合先上线小规模社区。不可直接部署到 GitHub Pages，不应使用会清空本地文件的无状态函数服务。
+生产环境采用 **单实例 Node + PostgreSQL + 持久文件存储**。用户、会话、领地、审核记录和世界规划存入 PostgreSQL；上传的 GLB 保存在 `/app/data/uploads`。本地未配置 `DATABASE_URL` 时仍可读取原 SQLite 开发世界，不会自动迁移或删除旧数据。不可直接部署到 GitHub Pages。
 
 ### Docker / VPS
 
-设置 `.env` 中的 `PUBLIC_URL=https://你的域名`、OAuth 配置和管理员 ID，执行：
+设置 `.env` 中的 `PUBLIC_URL=https://你的域名`、OAuth 配置、管理员 ID 和强随机 `POSTGRES_PASSWORD`（使用 URL 安全字符），执行：
 
 ```sh
 docker compose up -d --build
 ```
 
-容器仅将 8787 暴露给宿主本机，使用宿主机 Caddy（见 `Caddyfile.example`）或已有反向代理绑定正式域名并提供 HTTPS。持久数据卷保存 SQLite 和所有上传模型。生产配置不完整时服务会明确拒绝启动。
+Compose 启动 PostgreSQL 18，等待健康检查通过后启动应用；数据库端口不暴露到宿主公网。应用仅将 8787 暴露给宿主本机，使用 Caddy（见 `Caddyfile.example`）或已有反向代理提供 HTTPS。数据库和上传模型使用两个独立持久卷。生产配置不完整时服务会拒绝启动。
 
 ### 支持 Docker 的托管平台
 
-可将本目录作为独立 Git 仓库部署至支持 Dockerfile 与持久卷的平台。监听端口 8787，公开网络转发到该端口；环境变量同上，持久卷必须挂载 `/app/data`，并保持 **单副本**。本项目没有创建远程仓库、申请域名或开通计费服务。
+Zeabur 在同一项目中创建 PostgreSQL 服务，将应用的 `DATABASE_URL` 设置为平台共享变量 `${POSTGRES_CONNECTION_STRING}`。应用监听 `PORT`（默认 8787），公网端口须一致；上传模型持久卷挂载 `/app/data`，并保持 **单副本**。数据库无需开放公网。首次启动自动创建表，重启保留数据；`/health` 会实际查询数据库。
 
-备份时停止写入并一起复制整个数据卷（包含 SQLite WAL 文件与 uploads），或使用 SQLite 在线备份机制配合模型备份。不要只复制正在写入的 `town.sqlite` 主文件。更大规模再迁移 PostgreSQL + 对象存储 + CDN/任务队列。
+备份时暂停应用写入，使用 `pg_dump` 备份数据库并同步备份上传模型卷；恢复时使用同一时间点的两份备份。不要把本地 SQLite 测试数据复制到线上，也不要对在线 PostgreSQL 数据目录做普通文件复制。未来扩容多个应用副本前，需要将模型迁到共享对象存储并处理进程内缓存。
+
+PostgreSQL 集成测试使用专用测试数据库连接 `TEST_DATABASE_URL`，执行 `node --test test/postgres.test.mjs`。测试只创建并清理随机命名的独立 schema，覆盖并发领取、事务回滚、审核、CLI 授权、上传与重启持久化；不要使用生产数据库运行测试。
 
 ## 验证与源码
 

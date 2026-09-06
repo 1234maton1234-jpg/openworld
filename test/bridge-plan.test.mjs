@@ -48,10 +48,10 @@ test('bridge mesh and walking follow the same continuous section heights',()=>{
   assert.equal(second.objects.filter(o=>o.userData.bridgeStructure).length,count);
 });
 
-test('river-aware districts stay connected, keep lots clear of neighboring roads and share spans',()=>{
-  const store=createStore(':memory:'),h=createCoastalHydrology();try{const plans=[];for(let x=35;x<=37;x++)for(let z=36;z<=38;z++)plans.push(store.planner.region(x,z));const all=[...new Map(plans.flatMap(p=>p.roads).map(r=>[r.id,r])).values()],spans=new Map();
+test('river-aware districts stay connected, keep lots clear of neighboring roads and share spans',async ()=>{
+  const store=(await createStore(':memory:')),h=createCoastalHydrology();try{const plans=[];for(let x=35;x<=37;x++)for(let z=36;z<=38;z++)plans.push((await store.planner.region(x,z)));const all=[...new Map(plans.flatMap(p=>p.roads).map(r=>[r.id,r])).values()],spans=new Map();
     for(const p of plans){assert.deepEqual(validateRegion(p),[]);for(const lot of p.lots)for(const r of all)assert.equal(r.points.slice(1).some((b,i)=>segmentHitsLot(r.points[i],b,lot,r.width/2+6)),false);}
     for(const r of all)for(const s of r.sections||[])if(s.kind==='crossing'){if(spans.has(s.id)){const old=spans.get(s.id);assert.ok(JSON.stringify(s.points)===JSON.stringify(old.points)||JSON.stringify(s.points)===JSON.stringify(old.points.toReversed()));}spans.set(s.id,s);for(const p of [s.points[0],s.points.at(-1)])assert.ok(h.distance(p[0],p[2])>=84);}
     assert.ok(spans.size>0);
-  }finally{store.close();}
+  }finally{(await store.close());}
 });

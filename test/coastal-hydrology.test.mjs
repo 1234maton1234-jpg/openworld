@@ -23,8 +23,8 @@ test('main rivers are wide, tributaries meet them, and estuaries open into conti
   assert.ok(h.main(0,40000).width>h.main(0,0).width);
 });
 
-test('coastal regions support graded streets while offshore regions have no roads or claims',()=>{
-  const s=createStore(':memory:');try{const town=s.planner.around(9,577),classes=new Set(town.roads.map(r=>r.class));assert.ok(classes.has('arterial')&&classes.has('collector')&&classes.has('local'));for(const lot of town.lots)assert.notEqual(town.roads.find(r=>r.id===lot.entrance.roadId).class,'arterial');const sea=s.planner.around(0,620);assert.equal(sea.lots.length,0);assert.equal(sea.roads.length,0);const f=createUrbanTerrain([],createCoastalHydrology());assert.ok(f.height(0,43400)<-20);}finally{s.close();}
+test('coastal regions support graded streets while offshore regions have no roads or claims',async ()=>{
+  const s=(await createStore(':memory:'));try{const town=(await s.planner.around(9,577)),classes=new Set(town.roads.map(r=>r.class));assert.ok(classes.has('arterial')&&classes.has('collector')&&classes.has('local'));for(const lot of town.lots)assert.notEqual(town.roads.find(r=>r.id===lot.entrance.roadId).class,'arterial');const sea=(await s.planner.around(0,620));assert.equal(sea.lots.length,0);assert.equal(sea.roads.length,0);const f=createUrbanTerrain([],createCoastalHydrology());assert.ok(f.height(0,43400)<-20);}finally{(await s.close());}
 });
 test('arterial, collector and local profiles are stable across positive and negative coordinates',()=>{
   assert.deepEqual(roadProfile('v:4:9'),{class:'arterial',width:28});assert.equal(roadProfile('h:9:-2').width,18);assert.equal(roadProfile('v:-3:0').width,10);
