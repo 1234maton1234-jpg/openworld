@@ -1,5 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+test('turn arrow heads face upward on every junction approach',()=>{
+  const roads=[{id:'x',width:28,points:[[-150,4,0],[150,4,0]]},{id:'z',width:28,points:[[0,4,-150],[0,4,150]]}];
+  const {arrows}=roadMarkings(roads);assert.ok(arrows.length>0);
+  for(const q of arrows)for(const [i,j,k] of [[0,1,3],[1,2,3]]){
+    const a=q[i],b=q[j],c=q[k],normalY=(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]);
+    assert.ok(normalY>0,'Arrow triangle must be visible from above');
+  }
+});
 import {roadMarkings} from '../src/road-markings.mjs';
 const road=(id,points,width=10)=>({id,points,width});
 
@@ -8,7 +16,9 @@ test('both sidewalks have regularly spaced lights even on densely sampled roads'
   const result=roadMarkings([road('a',points)]);
   for(const side of [-1,1]){
     const lamps=result.furniture.filter(v=>v.p[2]*side>0);
-    assert.ok(lamps.length>=5);assert.ok(lamps.every(v=>Math.abs(v.p[2])===8));
+    assert.equal(lamps.length,4);assert.ok(lamps.every(v=>Math.abs(v.p[2])===8));
+    const positions=lamps.map(v=>v.p[0]).sort((a,b)=>a-b);
+    assert.ok(positions.slice(1).every((x,i)=>Math.abs(x-positions[i]-48)<1e-6));
   }
 });
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createStore} from '../server/store.mjs';
 test('claim ownership is exclusive and coordinate bounds are enforced',()=>{
   const s=createStore(':memory:');try{s.upsertUser('1','one');s.upsertUser('2','two');s.claim('1',-7,1);
-    assert.throws(()=>s.claim('2',-7,1),/被领取/);assert.throws(()=>s.claim('1',3,0),/只能领取/);assert.equal(s.claim('2',0,0).owner,'2');assert.throws(()=>s.claim('2',2.5,0),/整数/);assert.throws(()=>s.claim('2',Number.MAX_SAFE_INTEGER,0),/整数/);
+    assert.throws(()=>s.claim('2',-7,1),/被领取/);assert.throws(()=>s.claim('1',3,0),/只能领取/);const first=s.getPlot('1'),lot=s.planner.around(0,0).lots.find(p=>Math.hypot(p.cx-first.cx,p.cz-first.cz)>150);assert.ok(lot);assert.equal(s.claim('2',lot.x,lot.z).owner,'2');assert.throws(()=>s.claim('2',2.5,0),/整数/);assert.throws(()=>s.claim('2',Number.MAX_SAFE_INTEGER,0),/整数/);
   }finally{s.close();}
 });
 test('server refuses unplanned parcels and persists a stable foundation height',()=>{const s=createStore(':memory:');try{s.upsertUser('3','three');const plan=s.planner.region(0,0),missing=Array.from({length:64},(_,i)=>({x:i%8,z:Math.floor(i/8)})).find(p=>!plan.lots.some(l=>l.x===p.x&&l.z===p.z));assert.ok(missing);assert.throws(()=>s.claim('3',missing.x,missing.z),/道路、河道或公共空间/);assert.equal(s.getPlot('3'),undefined);const row=s.claim('3',-7,1);assert.equal(row.elevation,s.planner.lot(-7,1).elevation);}finally{s.close();}});

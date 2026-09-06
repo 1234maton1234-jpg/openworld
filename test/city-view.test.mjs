@@ -7,14 +7,43 @@ import {createUrbanTerrain} from '../shared/urban-terrain.mjs';
 import {createHydrology} from '../shared/hydrology.mjs';
 import {generateUrbanRegion} from '../shared/urban-plan.mjs';
 
+test('claimed plots do not add entrance pavement or an invisible walking surface',()=>{
+  const view=createCityView(new THREE.Scene(),()=>{},{background:false});
+  const plot={x:0,z:1,cx:0,cz:40,width:20,depth:20,elevation:4.25,owner:'test',entrance:{points:[[0,4.25,30],[0,4,0]]}};
+  view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[{id:'road',width:10,points:[[-100,4,0],[100,4,0]]}]},[plot]);
+  const walks=view.objects.filter(o=>o.userData.sidewalk);walks.forEach(o=>o.updateMatrixWorld());
+  assert.equal(new THREE.Raycaster(new THREE.Vector3(0,20,20),new THREE.Vector3(0,-1,0)).intersectObjects(walks).length,0);
+  assert.equal(view.surface(0,20),view.ground(0,20));
+});
+
+test('sloping bridge cannot erase a lower sidewalk where their elevations differ',()=>{
+  const view=createCityView(new THREE.Scene());
+  view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[
+    {id:'low',width:10,points:[[-100,4,80],[100,4,80]]},
+    {id:'ramp',width:10,points:[[0,4,-100],[0,14,100]]}
+  ]},[]);
+  const walks=view.objects.filter(o=>o.userData.sidewalk);walks.forEach(o=>o.updateMatrixWorld());
+  const ray=new THREE.Raycaster(new THREE.Vector3(0,6,88),new THREE.Vector3(0,-1,0));assert.ok(ray.intersectObjects(walks).length>0,'the lower sidewalk must remain below the sloped deck');
+});
+
+test('sidewalks cannot cross asphalt where nearby roads merge without a shared node',()=>{
+  const view=createCityView(new THREE.Scene());
+  view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[
+    {id:'wide',width:28,points:[[-100,4,0],[100,4,0]]},
+    {id:'merge',width:10,points:[[-100,4,10],[0,4,10],[70,4,35]]}
+  ]},[]);
+  const walks=view.objects.filter(o=>o.userData.sidewalk);walks.forEach(o=>o.updateMatrixWorld());
+  for(const x of [-70,-30,10]){const ray=new THREE.Raycaster(new THREE.Vector3(x,40,8),new THREE.Vector3(0,-1,0));assert.equal(ray.intersectObjects(walks).length,0,'parallel road sidewalk intrudes into the wider carriageway');assert.equal(view.surface(x,8),4);}
+});
+
 test('eight metre sidewalk lamps are instanced without the old count cap',()=>{
   const view=createCityView(new THREE.Scene());
   const roads=Array.from({length:20},(_,i)=>({id:String(i),width:10,points:[[-300,4,i*30],[300,4,i*30]]}));
   view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads},[]);
   const lamps=view.objects.filter(o=>o.userData.streetLight);
   assert.equal(lamps.length,2);assert.ok(lamps.every(o=>o.isInstancedMesh&&o.count>192));
-  assert.equal(lamps[0].geometry.parameters.height,8);
-  const matrix=new THREE.Matrix4();lamps[0].getMatrixAt(0,matrix);assert.equal(matrix.elements[13],8);
+  lamps[0].geometry.computeBoundingBox();const bounds=lamps[0].geometry.boundingBox;assert.ok(bounds.max.y>8&&bounds.max.y<8.5);assert.ok(Math.abs(bounds.min.y)<1e-6);
+  const matrix=new THREE.Matrix4();lamps[0].getMatrixAt(0,matrix);assert.equal(matrix.elements[13],4.25);
 });
 
 test('road join caps follow the approach slope instead of cutting through it',()=>{
@@ -36,17 +65,18 @@ test('moving within the cached city rebases meshes without rebuilding them',()=>
 test('four metre sidewalks have paving and remain walkable on raised roads',()=>{
   const view=createCityView(new THREE.Scene());
   view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[{id:'raised',width:10,points:[[-60,20,0],[60,20,0]]}]},[]);
-  assert.equal(view.surface(0,8.9),20);assert.notEqual(view.surface(0,9.1),20);
+  assert.equal(view.surface(0,8.9),20.25);assert.equal(view.surface(0,0),20);assert.notEqual(view.surface(0,9.1),20.25);
   const paving=view.objects.find(o=>o.userData.sidewalk);assert.ok(paving);
   assert.ok(paving.material.map);assert.ok(paving.geometry.attributes.uv);
-  paving.geometry.computeBoundingBox();assert.equal(paving.geometry.boundingBox.max.z,9);
+  paving.geometry.computeBoundingBox();assert.equal(paving.geometry.boundingBox.max.z,9);assert.equal(paving.geometry.boundingBox.max.y,20.25);
+  const curb=view.objects.find(o=>o.userData.curb);curb.geometry.computeBoundingBox();assert.equal(curb.geometry.boundingBox.min.y,20);assert.equal(curb.geometry.boundingBox.max.y,20.25);
   paving.updateMatrixWorld();const ray=new THREE.Raycaster(new THREE.Vector3(0,30,0),new THREE.Vector3(0,-1,0));assert.equal(ray.intersectObject(paving).length,0,'sidewalk must not extend beneath the carriageway');
 });
 test('concave polygon foundation rendering and picking preserve its notch',()=>{
   const view=createCityView(new THREE.Scene()),polygon=[[-32,-32],[32,-32],[32,0],[0,0],[0,32],[-32,32]],plot={x:0,z:0,cx:0,cz:0,width:64,depth:64,elevation:12,version:8,owner:'a',polygon};
   view.rebuild(0,0,{regions:[],lots:[],roads:[],parks:[],legacy:[],terrain:{frozen:[]},hydrology:{version:3,frozen:[]}},[plot]);
   assert.ok(view.pick(-16,16));assert.equal(view.pick(16,16),undefined);assert.equal(view.ground(-16,16),12);assert.equal(view.surface(-16,16),12);
-  const mesh=view.objects.find(o=>o.isMesh&&o.material.color.getHexString()==='cbd1b7');assert.ok(mesh);const ray=new THREE.Raycaster(new THREE.Vector3(16,50,16),new THREE.Vector3(0,-1,0));mesh.updateMatrixWorld();assert.equal(ray.intersectObject(mesh).length,0);
+  const mesh=view.objects.find(o=>o.isMesh&&o.material.name==='grass');assert.ok(mesh);const ray=new THREE.Raycaster(new THREE.Vector3(16,50,16),new THREE.Vector3(0,-1,0));mesh.updateMatrixWorld();assert.equal(ray.intersectObject(mesh).length,0);
 });
 
 test('junction infill has upward normals and a matching walkable surface',()=>{
@@ -55,7 +85,8 @@ test('junction infill has upward normals and a matching walkable surface',()=>{
   const patches=view.objects.filter(o=>o.userData.junctionSurface);assert.equal(patches.length,2);
   const sidewalks=view.objects.filter(o=>o.userData.sidewalk);for(const mesh of sidewalks)mesh.updateMatrixWorld();
   for(const [x,z] of [[0,0],[2,1],[-3,-2]]){const ray=new THREE.Raycaster(new THREE.Vector3(x,50,z),new THREE.Vector3(0,-1,0));assert.equal(ray.intersectObjects(sidewalks).length,0,'no sidewalk triangles inside the junction roadway');}
-  for(const mesh of patches){const {position,normal}=mesh.geometry.attributes;for(let i=0;i<position.count;i++){assert.ok(normal.getY(i)>.99);assert.ok(Math.abs(view.surface(position.getX(i)*.95,position.getZ(i)*.95)-4)<1e-6);}}
+  for(const mesh of patches){const {position,normal}=mesh.geometry.attributes;for(let i=0;i<position.count;i++){assert.ok(normal.getY(i)>.99);const y=view.surface(position.getX(i)*.95,position.getZ(i)*.95);assert.ok(Math.abs(y-4)<1e-6||Math.abs(y-4.25)<1e-6);}}
+  assert.equal(view.surface(0,0),4);assert.equal(view.surface(70,-10),4.25);
 });
 test('road paint is batched, upward facing and above the walking surface',()=>{
   const view=createCityView(new THREE.Scene());
@@ -68,7 +99,7 @@ test('rendered bridges are upward facing and walkable above the river',()=>{
   const plan=generateRegion(0,1),scene=new THREE.Scene(),view=createCityView(scene),data={regions:[plan],lots:plan.lots,roads:plan.roads,parks:plan.parks,legacy:[]};view.rebuild(0,8,data,[]);
   const bridge=plan.roads.find(r=>r.bridge&&r.points.some(p=>riverDistance(p[0],p[2])<10));assert.ok(bridge);
   const point=bridge.points.find(p=>riverDistance(p[0],p[2])<10);assert.ok(cityHeight(point[0],point[2])<0);assert.ok(Math.abs(view.surface(point[0],point[2])-point[1])<.001);
-  const roadMesh=view.objects.find(o=>o.material?.color?.getHexString()==='939b91');assert.ok(roadMesh.geometry.attributes.normal.getY(0)>.99);
+  const roadMesh=view.objects.find(o=>o.material?.name==='asphalt');assert.ok(roadMesh);assert.ok(roadMesh.geometry.attributes.normal.getY(0)>.99);
   const lot=plan.lots[0];assert.equal(view.pick(lot.cx,lot.cz).x,lot.x);assert.equal(view.surface(lot.cx,lot.cz),lot.elevation);assert.equal(view.pick(lot.cx+33,lot.cz),undefined);
   const count=view.objects.length;view.rebuild(0,8,data,[]);assert.equal(view.objects.length,count);
 });

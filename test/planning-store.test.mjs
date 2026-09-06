@@ -11,7 +11,7 @@ import {createUrbanTerrain} from '../shared/urban-terrain.mjs';
 import {cityHeight} from '../shared/city-plan.mjs';
 
 test('a fresh world uses the latest generator at the origin with no legacy masks',()=>{
-  const s=createStore(':memory:');try{const p=s.planner.around(0,0);assert.ok(p.regions.every(r=>r.version===7));assert.deepEqual(p.terrain.frozen,[]);assert.deepEqual(p.hydrology.frozen,[]);assert.deepEqual(p.legacy,[]);assert.equal(s.world(0,0,4).length,0);assert.ok(p.lots.some(l=>Math.abs(l.cx)<210&&Math.abs(l.cz)<210));s.upsertUser('fresh','fresh');assert.equal(s.claim('fresh',0,0).owner,'fresh');}finally{s.close();}
+  const s=createStore(':memory:');try{const p=s.planner.around(0,0);assert.ok(p.regions.every(r=>r.version===7));assert.deepEqual(p.terrain.frozen,[]);assert.deepEqual(p.hydrology.frozen,[]);assert.deepEqual(p.legacy,[]);assert.equal(s.world(0,0,4).length,0);const lot=p.lots.filter(l=>Math.hypot(l.cx,l.cz)<560).sort((a,b)=>Math.hypot(a.cx,a.cz)-Math.hypot(b.cx,b.cz))[0];assert.ok(lot);s.upsertUser('fresh','fresh');assert.equal(s.claim('fresh',lot.x,lot.z).owner,'fresh');}finally{s.close();}
 });
 test('planning is persisted before claims and is unchanged across restart',()=>{
   const dir=mkdtempSync(join(tmpdir(),'city-plans-')),path=join(dir,'town.sqlite');let s;

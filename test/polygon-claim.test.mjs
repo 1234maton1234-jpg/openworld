@@ -1,3 +1,4 @@
+import {testSession} from './auth-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStore} from '../server/store.mjs';
@@ -40,9 +41,9 @@ test('model validation rejects a triangle crossing a concave notch after scene t
 });
 test('authenticated HTTP polygon claim is revalidated and visible to visitors',async()=>{
   const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path'),dir=mkdtempSync(join(tmpdir(),'polygon-api-'));
-  const config={dataDir:dir,demo:true,production:false,url:'http://127.0.0.1:8787',adminIds:[]},{app,store}=createApp(config),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base=`http://127.0.0.1:${server.address().port}`;
+  const config={dataDir:dir,production:false,url:'http://127.0.0.1:8787',adminIds:[]},{app,store}=createApp(config),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base=`http://127.0.0.1:${server.address().port}`;
   try{let polygon;for(const lot of store.planner.around(0,0).lots){const x=Math.round(lot.cx/2)*2,z=Math.round(lot.cz/2)*2,p=[[x-32,z-32],[x+32,z-32],[x+32,z+32],[x-32,z+32]];try{store.checkLand(p);polygon=p;break;}catch{}}assert.ok(polygon);
-    const login=await fetch(base+'/api/demo-login',{method:'POST',headers:{Origin:config.url}}),cookie=login.headers.get('set-cookie').split(';')[0],auth=await login.json(),headers={Origin:config.url,Cookie:cookie,'X-CSRF-Token':auth.csrf,'Content-Type':'application/json'};
+    const auth=testSession(store),cookie=auth.cookie,headers={Origin:config.url,Cookie:cookie,'X-CSRF-Token':auth.csrf,'Content-Type':'application/json'};
     const bad=await fetch(base+'/api/plots/claim',{method:'POST',headers,body:JSON.stringify({polygon:[[0,0],[40,40],[0,40],[40,0]]})});assert.equal(bad.status,400);
     const response=await fetch(base+'/api/plots/claim',{method:'POST',headers,body:JSON.stringify({polygon})}),plot=await response.json();assert.equal(response.status,201,JSON.stringify(plot));assert.deepEqual(plot.polygon,polygon);
     const publicWorld=await (await fetch(base+`/api/world?x=${Math.round(plot.cx/70)}&z=${Math.round(plot.cz/70)}`)).json();assert.deepEqual(publicWorld.plots[0].polygon,polygon);assert.equal(publicWorld.planning.lots.length,0);

@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import {sampleTime,formatHour,advanceHour} from './time-of-day.mjs';
+import {createWorldClock} from './world-clock.mjs';
+import {sampleTime,formatHour} from './time-of-day.mjs';
 
 export function createAtmosphere({scene,sun,sky,ground,renderer,invalidate,reducedMotion}){
-  let hour=12,target=12,flow=false,elapsed=0,walking=false,lastApplied=-1;
+  const worldClock=createWorldClock();
+  let hour=worldClock(),elapsed=0,walking=false,lastApplied=-1;
   const windows=[],lamps=[];
   const uniforms={top:{value:new THREE.Color()},horizon:{value:new THREE.Color()},cloud:{value:new THREE.Color()},
     sunDir:{value:new THREE.Vector3()},moonDir:{value:new THREE.Vector3()},night:{value:0},time:{value:0}};
@@ -50,8 +52,7 @@ export function createAtmosphere({scene,sun,sky,ground,renderer,invalidate,reduc
     [-17,3.35,.5],[-8,3.35,.5],[10,3.35,.5],[19,3.35,.5],[7,3,18],[19,3,18],[-21,3.8,-14.5]];
   for(const p of positions){const lamp=new THREE.PointLight('#ffc17c',0,7.5,2);lamp.position.set(...p);scene.add(lamp);lamps.push(lamp);}
   renderer.shadowMap.autoUpdate=false;
-  const slider=document.querySelector('#town-time'),clock=document.querySelector('#time-clock'),button=document.querySelector('#daylight');
-  const panel=document.querySelector('#time-panel');
+  const clock=document.querySelector('#daylight');
   const color=(out,components)=>out.setRGB(...components,THREE.SRGBColorSpace);
 
   function apply(force=false){
@@ -64,8 +65,8 @@ export function createAtmosphere({scene,sun,sky,ground,renderer,invalidate,reduc
     sun.position.copy(state.night>.8?uniforms.moonDir.value:direction).multiplyScalar(65);
     sun.position.y=Math.max(5,sun.position.y);
     sun.color.set(state.night>.8?'#a7c3ff':state.elevation<.25?'#ffc296':'#fff1dc');sun.intensity=state.sun;
-    color(sky.color,state.horizon);sky.color.lerp(new THREE.Color('#7d94ba'),state.night);sky.groundColor.set(state.night>.5?'#49536c':'#9ca888');sky.intensity=state.ambient+state.night*.35;
-    renderer.toneMappingExposure=1.12+state.night*.10;
+    color(sky.color,state.horizon);sky.color.lerp(new THREE.Color('#7d94ba'),state.night);sky.groundColor.set(state.night>.5?'#49536c':'#66645d');sky.intensity=state.ambient*.65+state.night*.5;
+    renderer.toneMappingExposure=.94+state.night*.28;
     scene.background=uniforms.horizon.value;
     fog.color.copy(uniforms.horizon.value);fog.far=state.fog;fog.near=Math.min(65,state.fog*.34);scene.fog=walking?fog:null;
     ground.position.y=walking?-.14:-2.8;
@@ -73,30 +74,14 @@ export function createAtmosphere({scene,sun,sky,ground,renderer,invalidate,reduc
     for(const {material,glow} of windows){material.emissive.set(glow?'#ffc078':'#ffbd80');material.emissiveIntensity=glow?.20+state.night*2.6:state.night*.65;}
     for(const lamp of lamps)lamp.intensity=state.night*15;
     renderer.shadowMap.needsUpdate=true;
-    const text=formatHour(hour);clock.textContent=text;button.querySelector('.control-label').textContent=text;
-    slider.value=String(hour);slider.setAttribute('aria-valuetext',text);
+    const text=formatHour(hour);clock.querySelector('.control-label').textContent=text;clock.querySelector('.time-icon').textContent=state.night>.55?'☾':'☀';
     document.body.dataset.time=text;document.body.dataset.light=state.night>.55?'night':hour>16&&hour<20?'sunset':'day';
   }
-  button.addEventListener('click',()=>{panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));});
-  document.querySelector('#close-time').addEventListener('click',()=>{panel.hidden=true;button.setAttribute('aria-expanded','false');});
-  function select(value){
-    target=advanceHour(Number(value),0);flow=false;
-    document.querySelector('#time-flow').setAttribute('aria-pressed','false');
-    document.querySelector('#time-flow').textContent='时间流动';
-    if(reducedMotion){hour=target;apply(true);}
-    invalidate();
-  }
-  slider.addEventListener('input',()=>{select(slider.value);hour=target;apply(true);});
-  document.querySelectorAll('[data-hour]').forEach(el=>el.addEventListener('click',()=>select(el.dataset.hour)));
-  document.querySelector('#time-flow').addEventListener('click',event=>{
-    flow=!flow;target=hour;event.currentTarget.setAttribute('aria-pressed',String(flow));event.currentTarget.textContent=flow?'暂停时间':'时间流动';invalidate();
-  });
   function update(dt,camera,paused=false){
     if(!paused&&!reducedMotion)elapsed+=dt;
-    if(flow&&!paused)hour=target=advanceHour(hour,dt*24/180);
-    else{let diff=(target-hour+36)%24-12;hour=advanceHour(hour,diff*(1-Math.exp(-dt*5)));if(Math.abs(diff)<.003)hour=target;}
+    hour=worldClock();
     uniforms.time.value=elapsed;dome.position.copy(camera.position);apply();
-    return (!paused&&(!reducedMotion||flow))||Math.abs(target-hour)>.003;
+    return true;
   }
   function registerTown(town){
     const seen=new Set();town.traverse(o=>{

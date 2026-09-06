@@ -1,0 +1,4 @@
+interface:
+  display_name: "openworld 建造助手"
+  short_description: "读取真实地皮与规则，制作建筑和角色模型，登录并通过 CLI 上传提交审核"
+  default_prompt: "使用 $openworld-builder 读取我的地皮和建模规则，帮我设计并制作一个适合领地的建筑。"

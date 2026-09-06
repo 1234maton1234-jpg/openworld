@@ -1,4 +1,5 @@
 import {SIDEWALK_WIDTH} from '../shared/street-style.mjs';
+import {roadGraph} from '../shared/road-graph.mjs';
 const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
 const distance=(a,b)=>Math.hypot(b[0]-a[0],b[2]-a[2]);
 const key=p=>p.map(v=>Math.round(v*100)).join(',');
@@ -19,45 +20,16 @@ function hull(points){
   const half=list=>{const out=[];for(const p of list){while(out.length>1&&turn(out.at(-2),out.at(-1),p)<=1e-8)out.pop();out.push(p);}return out;};
   return [...half(sorted).slice(0,-1),...half(sorted.reverse()).slice(0,-1)];
 }
-export function junctionHeight(patches,x,z){
+export function junctionHeight(patches,x,z,walkLift=0){
   for(const patch of patches)for(const ring of [patch.road,patch.walk])for(let i=0;i<ring.length;i++){
     const a=patch.center,b=ring[i],c=ring[(i+1)%ring.length],den=cross(b[0]-a[0],b[2]-a[2],c[0]-a[0],c[2]-a[2]);
     if(Math.abs(den)<1e-8)continue;
     const u=cross(x-a[0],z-a[2],c[0]-a[0],c[2]-a[2])/den,v=cross(b[0]-a[0],b[2]-a[2],x-a[0],z-a[2])/den;
-    if(u>=-1e-8&&v>=-1e-8&&u+v<=1+1e-8)return a[1]+u*(b[1]-a[1])+v*(c[1]-a[1]);
+    if(u>=-1e-8&&v>=-1e-8&&u+v<=1+1e-8)return a[1]+u*(b[1]-a[1])+v*(c[1]-a[1])+(ring===patch.walk?walkLift:0);
   }
 }
 export function roadMarkings(roads){
-  const segments=[],seen=new Map(),bins=new Map(),stations=new Map();
-  for(const road of [...roads].sort((a,b)=>String(a.id).localeCompare(String(b.id))))for(const path of road.sections||[road])for(let i=1;i<path.points.length;i++){
-    const a=path.points[i-1],b=path.points[i];if(distance(a,b)<.01)continue;
-    const id=[key(a),key(b)].sort().join('|'),width=path.width||road.width,station=stations.get(road)||0,bridge=path.kind==='crossing'||(!road.sections&&road.bridge===true);
-    stations.set(road,station+distance(a,b));
-    if(seen.has(id)){seen.get(id).width=Math.max(seen.get(id).width,width);seen.get(id).bridge||=bridge;continue;}
-    const s={a,b,width,bridge,station,source:String(road.id),cuts:[0,1]};seen.set(id,s);segments.push(s);
-  }
-  for(let i=0;i<segments.length;i++){
-    const s=segments[i],candidates=new Set();
-    for(let x=Math.floor(Math.min(s.a[0],s.b[0])/64);x<=Math.floor(Math.max(s.a[0],s.b[0])/64);x++)for(let z=Math.floor(Math.min(s.a[2],s.b[2])/64);z<=Math.floor(Math.max(s.a[2],s.b[2])/64);z++){
-      const id=x+','+z,list=bins.get(id)||[];for(const j of list)candidates.add(j);list.push(i);bins.set(id,list);
-    }
-    for(const j of candidates){const r=segments[j],dx=s.b[0]-s.a[0],dz=s.b[2]-s.a[2],ux=r.b[0]-r.a[0],uz=r.b[2]-r.a[2],den=cross(dx,dz,ux,uz),qx=r.a[0]-s.a[0],qz=r.a[2]-s.a[2];
-      if(Math.abs(den)<1e-8){
-        if(Math.abs(cross(qx,qz,dx,dz))>.001)continue;
-        for(const [v,w] of [[s,r],[r,s]])for(const p of [w.a,w.b]){const vx=v.b[0]-v.a[0],vz=v.b[2]-v.a[2],t=((p[0]-v.a[0])*vx+(p[2]-v.a[2])*vz)/(vx*vx+vz*vz);if(t>0&&t<1&&Math.abs(mix(v.a,v.b,t)[1]-p[1])<.05)v.cuts.push(t);}
-        continue;
-      }
-      const t=cross(qx,qz,ux,uz)/den,u=cross(qx,qz,dx,dz)/den;
-      if(t>=-1e-8&&t<=1+1e-8&&u>=-1e-8&&u<=1+1e-8&&Math.abs(mix(s.a,s.b,t)[1]-mix(r.a,r.b,u)[1])<.05){s.cuts.push(Math.max(0,Math.min(1,t)));r.cuts.push(Math.max(0,Math.min(1,u)));}
-    }
-  }
-  const nodes=new Map(),edges=new Map();
-  function node(p){const id=key(p);if(!nodes.has(id))nodes.set(id,{p,arms:[]});return nodes.get(id);}
-  for(const s of segments){const cuts=[...new Set(s.cuts)].sort((a,b)=>a-b);for(let i=1;i<cuts.length;i++){
-    const a=node(mix(s.a,s.b,cuts[i-1])),b=node(mix(s.a,s.b,cuts[i]));if(distance(a.p,b.p)<.01)continue;
-    const id=[key(a.p),key(b.p)].sort().join('|');if(edges.has(id)){edges.get(id).width=Math.max(edges.get(id).width,s.width);edges.get(id).bridge||=s.bridge;continue;}
-    const edge={a,b,width:s.width,bridge:s.bridge,station:s.station+distance(s.a,s.b)*cuts[i-1],source:s.source};edges.set(id,edge);a.arms.push({to:b,edge});b.arms.push({to:a,edge});
-  }}
+  const {nodes,edges}=roadGraph(roads);
   const corridors=new Map();
   for(const e of edges.values()){
     const a=e.a.p,b=e.b.p,pad=e.width/2;e.paint=[[0,distance(a,b)]];
@@ -120,14 +92,14 @@ export function roadMarkings(roads){
       const turn=count>1&&lane===0&&left?-1:count>1&&lane===count-1&&right?1:straight?0:left?-1:right?1:0;
       if(!turn){arrows.push([at(.25,offset-.16),at(.25,offset+.16),at(1,offset+.16),at(1,offset-.16)]);arrows.push([at(0,offset-.03),at(0,offset+.03),at(.4,offset+.8),at(.4,offset-.8)]);}
       else{const elbow=at(.3,offset),tip=at(.3,offset+turn*1.35);arrows.push(quad(at(1,offset),elbow,-.16,.16),quad(elbow,tip,-.16,.16));
-        const dx=(tip[0]-elbow[0])/1.35,dz=(tip[2]-elbow[2])/1.35,head=(back,side)=>[tip[0]-dx*back-dz*side,tip[1],tip[2]-dz*back+dx*side];arrows.push([head(0,-.03),head(0,.03),head(.8,.55),head(.8,-.55)]);
+        const dx=(tip[0]-elbow[0])/1.35,dz=(tip[2]-elbow[2])/1.35,head=(back,side)=>[tip[0]-dx*back-dz*side,tip[1],tip[2]-dz*back+dx*side];arrows.push([head(0,.03),head(0,-.03),head(.8,-.55),head(.8,.55)]);
       }
     }}
   }
   const lampBins=new Map();
   for(const e of edges.values()){
     const a=e.a.p,b=e.b.p,len=distance(a,b),dx=(b[0]-a[0])/len,dz=(b[2]-a[2])/len,offset=e.width/2+SIDEWALK_WIDTH-1;
-    for(let at=Math.ceil((e.station-16)/32)*32+16-e.station;at<len;at+=32){
+    for(let at=Math.ceil((e.station-24)/48)*48+24-e.station;at<len;at+=48){
       if(!e.paint.some(([lo,hi])=>at>=lo&&at<=hi))continue;
       const center=mix(a,b,at/len);
       for(const side of [-1,1]){

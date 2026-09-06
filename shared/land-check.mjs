@@ -1,6 +1,7 @@
 import {polygonInfo,plotPolygon,polygonDistance,edges,inside,segmentDistance,LAND} from './polygon-land.mjs';
 import {createWorldHydrology} from './coastal-hydrology.mjs';
 import {createUrbanTerrain} from './urban-terrain.mjs';
+import {RIVER_RESERVE} from './construction-layout.mjs';
 export function createLandCheck(planning,owned=[]){
   const water=createWorldHydrology(planning.hydrology),field=createUrbanTerrain(planning.terrain?.frozen||[],water,planning.terrain);
   return polygon=>{
@@ -18,7 +19,7 @@ export function createLandCheck(planning,owned=[]){
       if(owned.some(p=>inside(plotPolygon(p),access)||edges(plotPolygon(p)).some(([a,b])=>segmentDistance(access,road,a,b)<4)))entrance=null;
     }
     let min=Infinity,max=-Infinity;
-    for(let x=land.left;x<=land.right;x+=2)for(let z=land.bottom;z<=land.top;z+=2)if(inside(polygon,[x,z])){if(water.distance(x,z)<48)reject('地皮涉及河流、海岸或护岸预留区');const h=field.height(x,z);min=Math.min(min,h);max=Math.max(max,h);}
+    for(let x=land.left;x<=land.right;x+=2)for(let z=land.bottom;z<=land.top;z+=2)if(inside(polygon,[x,z])){if(water.distance(x,z)<RIVER_RESERVE)reject('地皮涉及河流、海岸或护岸预留区');const h=field.height(x,z);min=Math.min(min,h);max=Math.max(max,h);}
     if(min<3||max-min>1)reject('地皮高差超过 1 米，请缩小范围或选择更平缓的位置');
     let elevation=(min+max)/2;
     if(entrance){const roadY=entrance.points[1][1],level=Math.max(roadY-.03*best,Math.min(roadY+.03*best,elevation));

@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Scene,Vector3} from 'three';
 import {createAvatar,chasePosition,cyclingLeg,cyclingArm} from '../src/avatar.mjs';
+test('first person cycling shows fitted arms and restores the body on switching back',()=>{
+  const avatar=createAvatar(new Scene());
+  const state={position:new Vector3(0,.24,.35),yaw:0,visible:true,moving:false,seated:true,vehicleType:'bike',dt:.016};
+  avatar.update({...state,firstPerson:true});
+  assert.equal(avatar.root.children.filter(p=>p.visible).length,6);
+  assert.equal(avatar.root.getObjectByName('hand-left').visible,true);
+  avatar.update({...state,firstPerson:false});assert.ok(avatar.root.children.every(p=>p.visible));
+});
 test('cycling hands meet handlebar grips through turns with bent, fixed-length arms',()=>{
   const avatar=createAvatar(new Scene()),axis=new Vector3(0,1,0);
   for(const yaw of [0,.7,Math.PI,-1.5]){

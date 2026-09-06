@@ -10,6 +10,22 @@ import * as THREE from 'three';
 const field={base:()=>10};
 const water={distance:(x,z)=>Math.abs(x),segments:()=>Array.from({length:48},(_,i)=>({riverId:'test',index:i,a:[0,-1200+i*50],b:[0,-1150+i*50],width:14}))};
 const road=(id,z)=>({id,width:16,points:[[-240,10,z],[0,10,z],[240,10,z]],bridge:true});
+test('coastal bridge approaches join from the landward side without a reverse turn',()=>{
+  const r=createBridgePlanner({...water,version:3},field).route(road('h:0:0',0));
+  for(let i=0;i<r.sections.length;i++){
+    const s=r.sections[i];if(s.kind!=='crossing')continue;
+    for(const [land,head,inner] of [[r.sections[i-1]?.points.at(-2),s.points[0],s.points[1]],[r.sections[i+1]?.points[1],s.points.at(-1),s.points.at(-2)]]){
+      if(!land)continue;const dot=(land[0]-head[0])*(head[0]-inner[0])+(land[2]-head[2])*(head[2]-inner[2]);assert.ok(dot>=-1e-6,'approach doubles back towards the bridge');
+    }
+  }
+});
+test('nearby coastal corridors share canonical nodes and an identical land route',()=>{
+  const coastal={...water,version:3},a={id:'h:0:0',points:[[100,10,-300],[100,10,300]]},b={id:'h:0:4',points:[[110,10,-290],[110,10,310]]};
+  const planner=createBridgePlanner(coastal,field),first=planner.route(a),second=planner.route(b);
+  assert.deepEqual(first.points,second.points);
+  const reversed=createBridgePlanner(coastal,field);assert.deepEqual(reversed.route(b).points,second.points);assert.deepEqual(reversed.route(a).points,first.points);
+  for(const p of first.points)assert.ok(coastal.distance(p[0],p[2])>=58);
+});
 test('nearby roads share short perpendicular crossings and dry bridgehead connections',()=>{
   const planner=createBridgePlanner(water,field),a=planner.route(road('a',0)),b=planner.route(road('b',30)),spans=a.sections.filter(s=>s.kind==='crossing');
   assert.equal(spans.length,1);assert.equal(b.sections.find(s=>s.kind==='crossing').id,spans[0].id);

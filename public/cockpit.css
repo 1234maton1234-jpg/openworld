@@ -1,5 +1,6 @@
 #car-cockpit{position:fixed;inset:0;z-index:4;pointer-events:none;color:#e6eddf;font-family:Consolas,"Microsoft YaHei",monospace}
 #car-cockpit[hidden]{display:none}
+#driving-help{position:fixed;right:24px;top:50%;bottom:auto;transform:translateY(-50%);z-index:10;pointer-events:none;color:#e6eddf;font-family:Consolas,"Microsoft YaHei",monospace}body[data-driving=true] #walk-hud>p{display:none!important}@media(max-width:650px){#driving-help{right:10px}}
 .dashboard{position:absolute;bottom:0;left:0;width:100%;height:30vh;min-height:150px;filter:drop-shadow(0 -5px 12px #0005)}
 .cockpit-pillar{position:absolute;bottom:22vh;width:36px;height:85vh;background:linear-gradient(90deg,#17211d,#36423a,#15201b);border:2px solid #59625466;transform-origin:bottom}
 .cockpit-pillar.left{left:0;transform:rotate(-14deg)}.cockpit-pillar.right{right:0;transform:rotate(14deg)}

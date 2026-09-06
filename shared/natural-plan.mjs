@@ -1,7 +1,8 @@
 import {generateRegion,roadHeight,cityHeight,riverDistance,overlaps} from './city-plan.mjs';
+import {constructionCoordinate} from './construction-layout.mjs';
 export function generateNaturalRegion(x,z,legacy=[],hydrology){
   const plan=generateRegion(x,z,legacy,hydrology),[left,bottom,right,top]=plan.bounds;
-  function warp(px,pz){const u=(px-left)/(right-left),v=(pz-bottom)/(top-bottom);if(u<=0||u>=1||v<=0||v>=1)return [px,pz];const envelope=Math.sin(Math.PI*u)*Math.sin(Math.PI*v);return [px+envelope*(48*Math.sin(z*.83+.8)+24*Math.sin(v*Math.PI*2)),pz+envelope*(45*Math.cos(x*.67+.4)+20*Math.sin(u*Math.PI*2))];}
+  function warp(px,pz){if(hydrology?.version===3&&!legacy.length)return [constructionCoordinate(px,0),constructionCoordinate(pz,1)];const u=(px-left)/(right-left),v=(pz-bottom)/(top-bottom);if(u<=0||u>=1||v<=0||v>=1)return [px,pz];const envelope=Math.sin(Math.PI*u)*Math.sin(Math.PI*v);return [px+envelope*(48*Math.sin(z*.83+.8)+24*Math.sin(v*Math.PI*2)),pz+envelope*(45*Math.cos(x*.67+.4)+20*Math.sin(u*Math.PI*2))];}
   plan.version=hydrology?3:2;
   plan.roads=plan.roads.map(road=>{const points=road.points.map(([px,y,pz])=>{const [nx,nz]=warp(px,pz);return [nx,nx===px&&nz===pz?y:Math.max(roadHeight(nx,nz),cityHeight(nx,nz,hydrology))+.035,nz];});return {...road,points,bridge:points.some(p=>(hydrology?hydrology.distance(p[0],p[2]):riverDistance(p[0],p[2]))<38)};});
   function nearest(points,x,z){let best;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],dx=b[0]-a[0],dz=b[2]-a[2],t=Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[2])*dz)/(dx*dx+dz*dz))),px=a[0]+dx*t,pz=a[2]+dz*t,d=Math.hypot(x-px,z-pz);if(!best||d<best.d)best={x:px,z:pz,y:a[1]+(b[1]-a[1])*t,d};}return best;}

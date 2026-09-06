@@ -61,17 +61,19 @@ function model(type){
 export function createVehicles(scene,{surface,obstacle,origin}){
   const items=['bike','car'].map((type,i)=>{const {group,wheels,pedals}=model(type);scene.add(group);return {type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,group,wheels,pedals,y:null};});
   let active=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;
+  function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.y=v.heading;v.group.updateMatrixWorld(true);}}
   function clear(v,x,z,heading,base){const c=VEHICLES[v.type];for(const along of [-c.length/2+.2,0,c.length/2-.2]){const px=x-Math.sin(heading)*along,pz=z-Math.cos(heading)*along,h=surface(px,pz);if(h<.5||Math.abs(h-base)>.45||obstacle(px,pz,h,c.radius))return false;for(const other of items)if(other!==v&&Math.hypot(px-other.x,pz-other.z)<c.radius+VEHICLES[other.type].radius)return false;}return true;}
   function exit(){if(!active)return null;const v=active,c=VEHICLES[v.type];for(const side of [-1,1])for(const along of [0,-c.length/2-1,c.length/2+1]){const x=v.x+Math.cos(v.heading)*(c.radius+1)*side-Math.sin(v.heading)*along,z=v.z-Math.sin(v.heading)*(c.radius+1)*side-Math.cos(v.heading)*along,h=surface(x,z);if(h>=.5&&Math.abs(h-v.y)<1&&!obstacle(x,z,h,.35)){active=null;v.speed=0;return {x,y:h+1.7,z,heading:v.heading};}}return null;}
   return {
     get active(){return active;},
+    rebase,
     targets(){return items.map(v=>({root:v.group,node:v.group,position:[0,.8,0],yaw:v.heading,vehicle:v}));},
     enter(v){active=v;v.speed=0;v.yawRate=0;v.travelHeading=v.heading;v.steer=0;v.reverseWait=0;orbit=0;pitch=.3;chaseHeading=v.heading;lookIdle=0;},exit,
     stop(){if(active)active.speed=0;active=null;},
     look(dx,dy){orbit-=dx*.0025;pitch=T.MathUtils.clamp(pitch+dy*.002,-.05,.9);lookIdle=1.5;},
     blocks(x,z,r=.35){return items.some(v=>{const dx=x-v.x,dz=z-v.z,c=VEHICLES[v.type],side=dx*Math.cos(v.heading)-dz*Math.sin(v.heading),along=dx*Math.sin(v.heading)+dz*Math.cos(v.heading);return Math.abs(side)<c.radius+r&&Math.abs(along)<c.length/2+r;});},
     update(dt,keys,enabled,camera){
-      for(const v of items){if(v.y===null)v.y=surface(v.x,v.z);if(v===active&&enabled){driveStep(v,{forward:keys.has('KeyW'),back:keys.has('KeyS'),left:keys.has('KeyA'),right:keys.has('KeyD'),brake:keys.has('Space'),handbrake:keys.has('ShiftLeft')||keys.has('ShiftRight')},dt,(x,z,h)=>clear(v,x,z,h,v.y));v.y=surface(v.x,v.z);}const o=origin();v.group.position.set(v.x-o.x*70,v.y,v.z-o.z*70);v.group.rotation.y=v.heading;v.group.updateMatrixWorld(true);}
+      for(const v of items){if(v.y===null)v.y=surface(v.x,v.z);if(v===active&&enabled){driveStep(v,{forward:keys.has('KeyW'),back:keys.has('KeyS'),left:keys.has('KeyA'),right:keys.has('KeyD'),brake:keys.has('Space'),handbrake:keys.has('ShiftLeft')||keys.has('ShiftRight')},dt,(x,z,h)=>clear(v,x,z,h,v.y));v.y=surface(v.x,v.z);}}rebase();
       if(active&&enabled){chaseHeading+=angleDelta(chaseHeading,active.heading)*(1-Math.exp(-6*dt));lookIdle=Math.max(0,lookIdle-dt);if(!lookIdle&&Math.abs(active.speed)>2)orbit+=angleDelta(orbit,0)*(1-Math.exp(-2*dt));}
       if(active){const v=active,o=origin(),angle=chaseHeading+orbit,d=v.type==='car'?6+Math.abs(v.speed)*.045:4.5,target=new T.Vector3(v.x-o.x*70,v.y+1,v.z-o.z*70);if(enabled){v.crankPhase+=v.speed*dt*1.4;v.pedals.forEach((p,i)=>{const a=v.crankPhase+i*Math.PI;p.position.y=.5+.17*Math.sin(a);p.position.z=.05+.17*Math.cos(a);});for(const wheel of v.wheels){wheel.spin.rotation.x-=v.speed*dt/wheel.radius;wheel.pivot.rotation.y=wheel.front?v.steerAngle||0:0;}}camera.position.set(target.x+Math.sin(angle)*d,target.y+1.4+Math.sin(pitch)*d,target.z+Math.cos(angle)*d);camera.lookAt(target);}
     }

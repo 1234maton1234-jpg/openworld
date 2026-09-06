@@ -1,8 +1,10 @@
-import {hash} from './world-noise.mjs';
+import {WORLD_SEED} from './world-noise.mjs';
+import {hash as terrainHash} from './terrain.mjs';
 import {createHydrology} from './hydrology.mjs';
 const BASIN=6400,REACH=2400,TILE=256,smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
 export const coastAt=x=>40000+700*Math.sin(x/3900)+330*Math.sin(x/1700+.8)+120*Math.sin(x/670);
-export function createCoastalHydrology({frozen=[],previous={frozen:[]}}={}){
+export function createCoastalHydrology({frozen=[],previous={frozen:[]},seed=WORLD_SEED}={}){
+  const hash=(x,z,salt)=>terrainHash(x,z,salt^seed);
   const old=createHydrology(previous.frozen),paths=new Map(),tiles=new Map();
   const center=(basin,z)=>basin*BASIN+1050+620*Math.sin(z/2800+hash(basin,0,1601)*6)+180*Math.sin(z/950+basin*.7);
   function main(basin,z){const x=center(basin,z),mouth=smooth((z-coastAt(x)+2400)/2400);return {x,width:3.5*(100+45*hash(basin,0,1602)+35*Math.sin(z/4200+basin)**2+mouth*190)};}

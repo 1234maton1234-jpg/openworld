@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {driveStep,VEHICLES,createVehicles} from '../src/vehicles.mjs';
 import {Scene,PerspectiveCamera} from 'three';
+test('origin changes move all vehicles immediately without advancing driving or wheels',()=>{
+  const origin={x:0,z:0},system=createVehicles(new Scene(),{surface:()=>4.3,obstacle:()=>false,origin:()=>origin}),camera=new PerspectiveCamera();
+  system.update(.016,new Set(),false,camera);const car=system.targets()[1].vehicle;system.enter(car);system.update(.05,new Set(['KeyW']),true,camera);
+  const before={x:car.x,z:car.z,speed:car.speed,phase:car.crankPhase,wheel:car.wheels[0].spin.rotation.x};
+  for(const [x,z] of [[1,0],[1,-1],[-10,7],[0,0]]){origin.x=x;origin.z=z;system.rebase();for(const {vehicle:v} of system.targets()){assert.ok(Math.abs(v.group.position.x+x*70-v.x)<1e-8);assert.ok(Math.abs(v.group.position.z+z*70-v.z)<1e-8);assert.equal(v.group.matrixWorld.elements[12],v.group.position.x);}assert.deepEqual({x:car.x,z:car.z,speed:car.speed,phase:car.crankPhase,wheel:car.wheels[0].spin.rotation.x},before);}
+});
 test('vehicles accelerate within limits, brake, reverse and stop at obstacles',()=>{
   for(const type of ['bike','car']){const v={type,x:0,z:0,speed:0,heading:0};for(let i=0;i<300;i++)driveStep(v,{forward:true},.05,()=>true);assert.equal(v.speed,VEHICLES[type].max);assert.ok(v.z<0);
     for(let i=0;i<60;i++)driveStep(v,{brake:true},.05,()=>true);assert.equal(v.speed,0);

@@ -1,6 +1,7 @@
 import {generateNaturalRegion} from './natural-plan.mjs';
 import {overlaps,riverDistance} from './city-plan.mjs';
 import {createUrbanTerrain} from './urban-terrain.mjs';
+import {RIVER_RESERVE} from './construction-layout.mjs';
 
 export function segmentHitsLot(a,b,lot,padding=0){
   let lo=0,hi=1;
@@ -27,7 +28,7 @@ export function generateUrbanRegion(rx,rz,legacy=[],hydrology,field=createUrbanT
     const lot={cx,cz,width:64,depth:64,version:plan.version};
     if([...lots,...legacy].some(p=>overlaps(lot,p,8))||blocked(lot))return;
     let min=Infinity,max=-Infinity;
-    for(let x=-32;x<=32;x+=8)for(let z=-32;z<=32;z+=8){if((hydrology?hydrology.distance(cx+x,cz+z):riverDistance(cx+x,cz+z))<48)return;const h=field.height(cx+x,cz+z);min=Math.min(min,h);max=Math.max(max,h);}
+    for(let x=-32;x<=32;x+=8)for(let z=-32;z<=32;z+=8){if((hydrology?hydrology.distance(cx+x,cz+z):riverDistance(cx+x,cz+z))<(hydrology?.version===3?RIVER_RESERVE:48))return;const h=field.height(cx+x,cz+z);min=Math.min(min,h);max=Math.max(max,h);}
     if(min<3||max-min>1)return;
     const n=nearest(road,cx,cz),dx=n.x-cx,dz=n.z-cz,t=32/Math.max(Math.abs(dx),Math.abs(dz));if(t>=1)return;
     if(plan.version>=5&&hydrology.distance(n.x,n.z)<84)return;

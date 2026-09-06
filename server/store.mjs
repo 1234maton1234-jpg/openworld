@@ -38,11 +38,21 @@ export function createStore(path){
   for(const col of ['cx','cz'])if(!db.prepare('PRAGMA table_info(plots)').all().some(c=>c.name===col))db.exec('ALTER TABLE plots ADD COLUMN '+col+' REAL');
   db.exec('UPDATE plots SET cx=x*70 WHERE cx IS NULL; UPDATE plots SET cz=z*70 WHERE cz IS NULL; CREATE INDEX IF NOT EXISTS plot_position ON plots(cx,cz)');
   const planner=createPlanner(db);
+  for(const name of ['name','description'])if(!db.prepare('PRAGMA table_info(plots)').all().some(c=>c.name===name))db.exec("ALTER TABLE plots ADD COLUMN "+name+" TEXT NOT NULL DEFAULT ''");
   for(const [name,type] of [['polygon','TEXT'],['entrance','TEXT'],['width','REAL'],['depth','REAL'],['area','REAL']])if(!db.prepare('PRAGMA table_info(plots)').all().some(c=>c.name===name))db.exec('ALTER TABLE plots ADD COLUMN '+name+' '+type);
   const decode=row=>row?{...row,polygon:row.polygon?JSON.parse(row.polygon):null,entrance:row.entrance?JSON.parse(row.entrance):null,width:row.width||64,depth:row.depth||64,area:row.area||4096,version:row.polygon?8:4}:row;
   function transaction(fn){db.exec('BEGIN IMMEDIATE');try{const result=fn();db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}}
   const getUser=id=>db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  const plotRevisions=new Map(),plotRevision=owner=>plotRevisions.get(owner)||0;
   const getPlot=owner=>decode(db.prepare('SELECT * FROM plots WHERE owner=?').get(owner));
+  function deletePlot(owner){const ids=transaction(()=>{
+    if(!getPlot(owner))fail(404,'你尚未领取地皮');
+    const rows=db.prepare('SELECT id FROM submissions WHERE owner=? UNION SELECT id FROM model_drafts WHERE owner=?').all(owner,owner);
+    db.prepare('DELETE FROM plots WHERE owner=?').run(owner);
+    db.prepare('DELETE FROM submissions WHERE owner=?').run(owner);
+    db.prepare('DELETE FROM model_drafts WHERE owner=?').run(owner);
+    return rows.map(row=>row.id);
+  });plotRevisions.set(owner,plotRevision(owner)+1);return ids;}
   const getSubmission=id=>db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
   function upsertUser(id,login){db.prepare('INSERT INTO users VALUES (?,?) ON CONFLICT(id) DO UPDATE SET login=excluded.login').run(id,login);return getUser(id);}
   function claim(owner,x,z){coordinate(x);coordinate(z);return transaction(()=>{
@@ -63,5 +73,5 @@ export function createStore(path){
   });}
   const world=(x,z,r)=>db.prepare(`SELECT p.*,u.login,s.title,s.metrics FROM plots p JOIN users u ON p.owner=u.id LEFT JOIN submissions s ON p.published=s.id WHERE p.cx BETWEEN ? AND ? AND p.cz BETWEEN ? AND ?`).all((x-r-8)*70,(x+r+8)*70,(z-r-8)*70,(z+r+8)*70).map(decode);
   function rate(key,max,window=60000){const now=Date.now();db.prepare('DELETE FROM rate_limits WHERE expires<?').run(now);db.prepare('INSERT INTO rate_limits VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1').run(key,now+window);if(db.prepare('SELECT count FROM rate_limits WHERE key=?').get(key).count>max)fail(429,'操作太频繁，请稍后再试');}
-  return {db,planner,transaction,getUser,getPlot,getSubmission,upsertUser,claim,claimLand,checkLand,canSubmit,submit,review,world,rate,close:()=>db.close()};
+  return {db,planner,transaction,getUser,getPlot,deletePlot,plotRevision,getSubmission,upsertUser,claim,claimLand,checkLand,canSubmit,submit,review,world,rate,close:()=>db.close()};
 }

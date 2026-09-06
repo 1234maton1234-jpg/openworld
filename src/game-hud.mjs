@@ -1,0 +1,19 @@
+export function createGameHud({world,account,onLand,onAccount,onCloseLand,onView}){
+  const paths={view:'M12 0 14 3H10L12 0ZM12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12ZM17 7l-3 7-7 3 3-7 7-3Zm-5 4-1 2 2-1-1-1ZM2 11v2H0v-2h2Zm22 0v2h-2v-2h2ZM11 22h2v2h-2v-2Z',account:'M12 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM8 13l4 4 4-4c3 1 5 4 5 7v1H3v-1c0-3 2-6 5-7Zm4 6-1 2h2l-1-2Z',land:'M11 2h2v11h-2V2Zm3 1h7l-2 3 2 3h-7V3ZM8 9v3l-4 2 8 4 8-4-4-2V9l8 5v3l-12 6L0 17v-3l8-5Zm-6 7v1l9 4v-1l-9-4Zm20 0-9 4v1l9-4v-1Z'};
+  const nav=document.createElement('nav');nav.id='game-actions';nav.setAttribute('aria-label','游戏工具');
+  for(const [id,label] of [['account','登录 / 账号'],['view','上帝视角'],['land','领取地皮']]){const button=document.createElement('button');button.type='button';button.dataset.action=id;button.setAttribute('aria-label',label);button.title=label;button.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[id]}"/></svg><span>${label}</span>`;button.onclick=()=>{document.exitPointerLock?.();if(id==='view'){account.hidden=true;onView();}else if(id==='land'){account.hidden=true;onLand();}else onAccount();};nav.append(button);}document.body.append(nav);
+  const view=nav.querySelector('[data-action="view"]'),profile=nav.querySelector('[data-action="account"]');
+  profile.setAttribute('aria-controls','profile-card');account.id='profile-card';
+  const heading=document.createElement('div');heading.className='profile-heading';heading.innerHTML='<div class="profile-avatar" aria-hidden="true">W</div><div><small>GITHUB ACCOUNT</small></div><button type="button" class="profile-close" aria-label="关闭个人信息">×</button>';heading.children[1].append(document.querySelector('#account-name'));heading.querySelector('button').onclick=()=>{account.hidden=true;profile.focus();};
+  const details=document.createElement('div');details.id='profile-details';
+  const actions=document.createElement('div');actions.className='profile-actions';actions.append(...account.children);account.append(heading,details,actions);
+  document.addEventListener('pointerdown',event=>{if(!account.hidden&&!account.contains(event.target)&&!profile.contains(event.target))account.hidden=true;});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!account.hidden){account.hidden=true;profile.focus();}});
+  const ping=document.createElement('div');ping.id='network-latency';ping.title='到游戏服务器的 HTTP 往返延迟';ping.textContent='· -- ms';nav.append(ping);
+  let measuring=false;
+  async function measure(){if(document.hidden||measuring)return;measuring=true;const start=performance.now();try{const response=await fetch('/health',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)throw Error();await response.text();const ms=Math.round(performance.now()-start);ping.textContent='▂▄▆ '+ms+' ms';ping.dataset.quality=ms<120?'good':ms<300?'slow':'poor';}catch{ping.textContent='· 离线';ping.dataset.quality='poor';}finally{measuring=false;}}
+  measure();setInterval(measure,10000);document.addEventListener('visibilitychange',measure);
+  function sync(){const overview=document.body.dataset.walk!=='true',label=overview?'返回第一人称':'上帝视角';view.title=label;view.setAttribute('aria-label',label);view.setAttribute('aria-pressed',String(overview));view.querySelector('span').textContent=label;profile.setAttribute('aria-expanded',String(!account.hidden));}
+  new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-walk']});new MutationObserver(sync).observe(account,{attributes:true,attributeFilter:['hidden']});sync();
+  const close=document.createElement('button');close.id='close-plot-panel';close.type='button';close.textContent='×';close.title='关闭领地面板';close.setAttribute('aria-label','关闭领地面板');close.onclick=onCloseLand;document.querySelector('.plot-panel').prepend(close);
+}
