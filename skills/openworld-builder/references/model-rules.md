@@ -18,6 +18,21 @@ Building limits and current upload behavior are verified against the project val
 - Finite coordinates and valid glTF required. Keep bounds within ±10000 m of the model origin; an empty or microscopic model is rejected.
 - Prefer merged static geometry and reused materials where appropriate; preserve geometry needed for the requested silhouette and gameplay access.
 
+## Lighting tiers
+
+These four tiers are a modeling convention for building and avatar emissive materials, not CLI options or runtime light presets. Follow the user's requested tier for each relevant surface; ordinary non-emitting surfaces remain at tier 0.
+
+| Tier | Appearance | Typical use |
+| --- | --- | --- |
+| 0 | No emission; still receives the world's ambient and direct lighting. | Walls, unlit windows, switched-off lamps. |
+| 1 | Very faint glow, subtle even at night. | Small indicators and restrained decorative accents. |
+| 2 | Normal illuminated-window brightness, clearly lit without losing color or detail. | Lit windows and ordinary luminous panels. |
+| 3 | Brightest tier, visibly stronger than tier 2 while retaining color and avoiding large overexposed areas. | Small lamp faces and strong luminous accents. |
+
+- Use standard PBR `emissiveFactor` and optional embedded `emissiveTexture`; tier 0 uses `[0, 0, 0]`. Tier numbers are labels, not values to copy into `emissiveFactor`. Tune tiers 1–3 under the same exposure and world lighting so their relative brightness is clear.
+- Do not export light objects or use light/material extensions, including `KHR_lights_punctual` and `KHR_materials_emissive_strength`. Emissive surfaces do not by themselves illuminate nearby geometry; world illumination remains controlled by the site.
+- Keep emission limited to intended luminous parts instead of making the entire model glow. Inspect day and night appearance when the game preview is available, and report the selected tiers and any unverified preview conditions with the artifact.
+
 ## Avatars
 
 - **Mandatory authoring requirement:** newly created character models must be rigged and skinned, not static figurines. Include a usable humanoid hierarchy (root/hips, spine, neck/head, paired upper/lower arms and hands, paired thighs/calves and feet), valid inverse bind matrices and normalized skin weights. Do not count merely adding bone names or parenting rigid body pieces as skinning.

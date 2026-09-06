@@ -37,6 +37,8 @@ Design to the user's requested style and function. Fit the complete model, found
 
 Use the available modeling tool, export a self-contained GLB and inspect it visually from several angles. Check dimensions, transformed bounds, polygon containment, resource counts, normals and embedded textures. Keep the editable source and final artifact. If no local validator is available, state which checks remain unverified; upload performs authoritative validation.
 
+Use the four lighting tiers in [references/model-rules.md](references/model-rules.md#lighting-tiers) when authoring emissive surfaces: 0 off, 1 very faint glow, 2 normal lit-window brightness, 3 brightest. Apply the requested tier to the relevant parts and report the choices with the model.
+
 ## Upload and submit
 
 Execute external operations within the user's requested scope. A local modeling request alone is not an instruction to replace an avatar or publish a submission. If upload/submission was already requested, proceed without asking again. Otherwise finish a concrete preview and ask only for the remaining action.
