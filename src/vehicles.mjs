@@ -34,7 +34,7 @@ export function driveStep(v,input,dt,canMove){
     if(!canMove(x,z,heading)){v.speed=0;break;}v.x=x;v.z=z;v.heading=heading;
   }
 }
-function model(type){
+export function createVehicleModel(type){
   const group=new T.Group(),wheels=[],materials={paint:new T.MeshStandardMaterial({color:type==='car'?'#bf6548':'#4b938a',roughness:.45,metalness:.25}),rubber:new T.MeshStandardMaterial({color:'#242a2b',roughness:1}),metal:new T.MeshStandardMaterial({color:'#aebabc',metalness:.65,roughness:.3}),glass:new T.MeshStandardMaterial({color:'#28434d',roughness:.22}),lamp:new T.MeshStandardMaterial({color:'#fff0c8',emissive:'#ddbd70',emissiveIntensity:.5})};
   function mesh(g,m,x,y,z,rx=0,ry=0,rz=0){const o=new T.Mesh(g,materials[m]);o.position.set(x,y,z);o.rotation.set(rx,ry,rz);o.castShadow=o.receiveShadow=true;group.add(o);return o;}
   const box=(x,y,z,w,h,d,m)=>mesh(new T.BoxGeometry(w,h,d),m,x,y,z);
@@ -59,7 +59,7 @@ function model(type){
   return {group,wheels,pedals};
 }
 export function createVehicles(scene,{surface,obstacle,origin}){
-  const items=['bike','car'].map((type,i)=>{const {group,wheels,pedals}=model(type);scene.add(group);return {type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,group,wheels,pedals,y:null};});
+  const items=['bike','car'].map((type,i)=>{const {group,wheels,pedals}=createVehicleModel(type);scene.add(group);return {type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,group,wheels,pedals,y:null};});
   let active=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;
   function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.y=v.heading;v.group.updateMatrixWorld(true);}}
   function clear(v,x,z,heading,base){const c=VEHICLES[v.type];for(const along of [-c.length/2+.2,0,c.length/2-.2]){const px=x-Math.sin(heading)*along,pz=z-Math.cos(heading)*along,h=surface(px,pz);if(h<.5||Math.abs(h-base)>.45||obstacle(px,pz,h,c.radius))return false;for(const other of items)if(other!==v&&Math.hypot(px-other.x,pz-other.z)<c.radius+VEHICLES[other.type].radius)return false;}return true;}
