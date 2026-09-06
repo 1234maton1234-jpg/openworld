@@ -51,7 +51,11 @@ export async function createApp(config){
       try{res.status(201).json((await store.submit(req.user.id,title,metrics,id,req.plotRevision)));}catch(error){unlinkSync(join(uploads,id+'.glb'));throw error;}
     }finally{req.releaseValidation();}
   });
-  app.get('/api/admin/submissions',requireAdmin,async (req,res)=>res.json((await store.db.prepare("SELECT s.*,u.login,p.x,p.z FROM submissions s JOIN users u ON s.owner=u.id JOIN plots p ON p.owner=s.owner WHERE s.status='pending' ORDER BY s.created LIMIT 100").all())));
+  app.get('/api/admin/submissions',requireAdmin,async (req,res)=>{
+    const status=req.query.status||'pending',offset=Number(req.query.offset||0);
+    if(!['pending','published','rejected','superseded'].includes(status)||!Number.isSafeInteger(offset)||offset<0)fail(400,'审核筛选参数无效');
+    res.json(await store.db.prepare('SELECT s.*,u.login,p.x,p.z,p.name AS plot_name,p.description AS plot_description FROM submissions s JOIN users u ON s.owner=u.id JOIN plots p ON p.owner=s.owner WHERE s.status=? ORDER BY s.created DESC,s.id LIMIT 100 OFFSET ?').all(status,offset));
+  });
   app.post('/api/admin/submissions/:id/review',requireAdmin,async (req,res)=>{
     if(typeof req.body?.approve!=='boolean'||typeof req.body?.note!=='string'||req.body.note.length>500)fail(400,'审核参数无效');
     if(!req.body.approve&&!req.body.note.trim())fail(400,'请填写退回原因');
@@ -64,6 +68,7 @@ export async function createApp(config){
     res.type('model/gltf-binary').sendFile(join(uploads,row.id+'.glb'));
   });
   app.get('/health',async(req,res)=>{await store.db.prepare('SELECT 1').get();return res.set('Cache-Control','no-store').json({ok:true,serverTime:Date.now()});});
+  app.get(['/admin','/admin.html'],(req,res,next)=>{res.set('Cache-Control','no-store');if(!req.user)return res.redirect('/auth/github?returnTo=admin');requireAdmin(req,res,next);},(req,res)=>res.sendFile(join(root,'public','admin.html')));
   app.get('/game',(req,res)=>res.sendFile(join(root,'public','game.html')));
   app.get('/cli-authorize',(req,res)=>res.set('Cache-Control','no-store').sendFile(join(root,'public','cli-authorize.html')));
   app.use(express.static(join(root,'public'),{index:'index.html',maxAge:0}));

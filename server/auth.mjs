@@ -30,6 +30,7 @@ export async function installAuth(app,store,config){
     const state=random(),verifier=random();(await db.prepare('DELETE FROM oauth WHERE expires<?').run(Date.now()));(await db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now()));(await db.prepare('INSERT INTO oauth VALUES (?,?,?)').run(hash(state),verifier,Date.now()+600000));
     res.cookie('town_oauth',state,{...cookieOptions,maxAge:600000});
     if(/^[A-F0-9]{12}$/.test(String(req.query.cli||'')))res.cookie('town_cli',req.query.cli,{...cookieOptions,maxAge:600000});else res.clearCookie('town_cli',cookieOptions);
+    if(req.query.returnTo==='admin')res.cookie('town_return','admin',{...cookieOptions,maxAge:600000});else res.clearCookie('town_return',cookieOptions);
     const params=new URLSearchParams({client_id:config.clientId,redirect_uri:config.url+'/auth/github/callback',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'});
     res.redirect('https://github.com/login/oauth/authorize?'+params);
   });
@@ -43,7 +44,7 @@ export async function installAuth(app,store,config){
       const token=await response.json();if(!response.ok||!token.access_token)throw new Error('token');
       const profile=await fetch('https://api.github.com/user',{headers:{Authorization:'Bearer '+token.access_token,Accept:'application/vnd.github+json','User-Agent':'sakurami-online','X-GitHub-Api-Version':'2022-11-28'},signal:AbortSignal.timeout(15000)});
       const user=await profile.json();if(!profile.ok||!Number.isSafeInteger(user.id)||user.id<=0||typeof user.login!=='string')throw new Error('profile');
-      (await session(req,res,(await store.upsertUser(String(user.id),user.login))));const cli=cookie(req,'town_cli');res.clearCookie('town_cli',cookieOptions);res.redirect(/^[A-F0-9]{12}$/.test(cli)?'/cli-authorize?code='+cli:'/game');
+      (await session(req,res,(await store.upsertUser(String(user.id),user.login))));const cli=cookie(req,'town_cli'),admin=cookie(req,'town_return')==='admin';res.clearCookie('town_cli',cookieOptions);res.clearCookie('town_return',cookieOptions);res.redirect(/^[A-F0-9]{12}$/.test(cli)?'/cli-authorize?code='+cli:admin?'/admin':'/game');
     }catch{res.redirect('/game?auth=failed');}
   });
 }

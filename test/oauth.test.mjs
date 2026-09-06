@@ -4,6 +4,24 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../server/app.mjs';
+
+test('admin OAuth returns to the protected dashboard without arbitrary redirects',async t=>{
+  const data=mkdtempSync(join(tmpdir(),'admin-oauth-')),config={dataDir:data,url:'http://127.0.0.1',adminIds:['147692760'],clientId:'test',clientSecret:'test'},nativeFetch=globalThis.fetch;
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    if(url==='https://github.com/login/oauth/access_token')return Response.json({access_token:'test-access'});
+    if(url==='https://api.github.com/user')return Response.json({id:147692760,login:'tamikip'});
+    return nativeFetch(url,options);
+  });
+  const {app,store}=await createApp(config),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
+  try{
+    const start=await fetch(base+'/auth/github?returnTo=admin',{redirect:'manual'}),target=new URL(start.headers.get('location'));
+    const cookies=start.headers.getSetCookie().filter(v=>v.startsWith('town_oauth=')||v.startsWith('town_return=')).map(v=>v.split(';')[0]).join('; ');
+    const callback=await fetch(base+'/auth/github/callback?code=test&state='+target.searchParams.get('state'),{headers:{Cookie:cookies},redirect:'manual'});
+    assert.equal(callback.headers.get('location'),'/admin');
+    const cookie=callback.headers.getSetCookie().find(v=>v.startsWith('town_session=')).split(';')[0];
+    assert.equal((await fetch(base+'/admin',{headers:{Cookie:cookie}})).status,200);
+  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));await store.close();rmSync(data,{recursive:true,force:true});}
+});
 test('OAuth exchanges a single-use state for a local session with minimal identity access',async t=>{
   const data=mkdtempSync(join(tmpdir(),'openworld-oauth-')),config={dataDir:data,demo:false,production:false,url:'http://127.0.0.1:8787',adminIds:[],clientId:'test-client',clientSecret:'test-secret'},nativeFetch=globalThis.fetch;
   let exchanges=0;t.mock.method(globalThis,'fetch',async(url,options)=>{if(url==='https://github.com/login/oauth/access_token'){exchanges++;const body=options.body;assert.equal(body.get('redirect_uri'),config.url+'/auth/github/callback');assert.ok(body.get('code_verifier'));return Response.json({access_token:'test-access'});}if(url==='https://api.github.com/user')return Response.json({id:12345,login:'test-user'});return nativeFetch(url,options);});

@@ -64,6 +64,8 @@ npm run dev
 
 ## 部署
 
+审核后台位于 `/admin`，管理员也可从游戏账号面板的「审核工作台」进入。未登录会跳转 GitHub，登录后返回后台；服务端按 `ADMIN_GITHUB_IDS` 中的固定 GitHub ID 授权，线上 `tamikip` 对应 `147692760`。后台支持待审核、已通过、已退回及历史版本分页列表，旋转/缩放 GLB 预览、通过公开与填写原因退回。模型预览成功后才允许审核；每次审核记录审核人、时间和备注。
+
 生产环境采用 **单实例 Node + PostgreSQL + 持久文件存储**。用户、会话、领地、审核记录和世界规划存入 PostgreSQL；上传的 GLB 保存在 `/app/data/uploads`。本地未配置 `DATABASE_URL` 时仍可读取原 SQLite 开发世界，不会自动迁移或删除旧数据。不可直接部署到 GitHub Pages。
 
 ### Docker / VPS
