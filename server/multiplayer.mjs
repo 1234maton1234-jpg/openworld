@@ -1,9 +1,17 @@
 import {WebSocketServer,WebSocket} from 'ws';
 import {randomUUID,createHash} from 'node:crypto';
 import {playerPose,PLAYER_RADIUS,PLAYER_LIMIT} from '../shared/player-state.mjs';
+import {createPlayerPositions} from './player-position.mjs';
 
 export function installMultiplayer(server,store,config){
   const wss=new WebSocketServer({noServer:true,maxPayload:1024,perMessageDeflate:false}),peers=new Map(),pending=new Set();let closed=false;
+  const positions=createPlayerPositions(store.db),writes=new Map();
+  function save(peer){
+    if(!peer.userId||!peer.lastPosition||!peer.dirty)return Promise.resolve();
+    const pose={...peer.lastPosition};peer.dirty=false;
+    const write=(writes.get(peer.userId)||Promise.resolve()).then(async()=>{await (await positions).save(peer.userId,pose);}).catch(()=>{peer.dirty=true;console.error('Player position save failed');});
+    writes.set(peer.userId,write);write.finally(()=>{if(writes.get(peer.userId)===write)writes.delete(peer.userId);});return write;
+  }
   const token=req=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('town_session='))?.slice(13);
   async function identity(hash){return hash?store.db.prepare('SELECT u.id,u.login,a.id AS avatar FROM sessions s JOIN users u ON s.user=u.id LEFT JOIN avatars a ON a.owner=u.id WHERE s.hash=? AND s.expires>?').get(hash,Date.now()):null;}
   function send(ws,value){if(ws.readyState!==WebSocket.OPEN)return;if(ws.bufferedAmount>131072){ws.terminate();return;}ws.send(JSON.stringify(value));}
@@ -14,17 +22,18 @@ export function installMultiplayer(server,store,config){
     pending.add(socket);socket.setTimeout(10000,()=>socket.destroy());
     try{
       const raw=token(req),hash=raw?createHash('sha256').update(raw).digest('hex'):null,user=await identity(hash);
+      let resume=null;if(user){await writes.get(user.id);resume=await (await positions).load(user.id);if(writes.has(user.id)){await writes.get(user.id);resume=await (await positions).load(user.id);}}
       if(closed||socket.destroyed)return;
       socket.setTimeout(0);
       wss.handleUpgrade(req,socket,head,ws=>{
         const id=randomUUID(),peer={id,ip,hash:user?hash:null,userId:user?.id,name:user?.login||'访客·'+id.slice(0,6),avatar:user?.avatar||null,pose:null,alive:true,updated:Date.now(),window:Date.now(),messages:0,checking:false};
-        if(user)for(const [other,p] of peers)if(p.userId===user.id){peers.delete(other);other.close(4001,'Account connected elsewhere');}
-        peers.set(ws,peer);send(ws,{type:'welcome',id,name:peer.name});
-        ws.on('error',()=>{});ws.on('pong',()=>{peer.alive=true;});ws.on('close',()=>peers.delete(ws));
+        if(user)for(const [other,p] of peers)if(p.userId===user.id){resume=p.lastPosition||resume;void save(p);peers.delete(other);other.close(4001,'Account connected elsewhere');}
+        peers.set(ws,peer);send(ws,{type:'welcome',id,name:peer.name,userId:user?.id||null,position:resume});
+        ws.on('error',()=>{});ws.on('pong',()=>{peer.alive=true;});ws.on('close',()=>{if(peers.has(ws)){void save(peer);peers.delete(ws);}});
         ws.on('message',(bytes,binary)=>{
           if(!peers.has(ws))return;const now=Date.now();if(now-peer.window>=1000){peer.window=now;peer.messages=0;}
           if(binary||++peer.messages>30){ws.close(1008,'Invalid presence traffic');return;}
-          try{const message=JSON.parse(bytes);if(message.type!=='pose')return;const pose=playerPose(message.pose);if(!pose){ws.close(1008,'Invalid pose');return;}peer.pose=pose;peer.updated=now;}catch{ws.close(1008,'Invalid JSON');}
+          try{const message=JSON.parse(bytes);if(message.type!=='pose')return;const pose=playerPose(message.pose);if(!pose){ws.close(1008,'Invalid pose');return;}peer.pose=pose;peer.updated=now;if(pose.active){peer.lastPosition=pose;peer.dirty=true;}}catch{ws.close(1008,'Invalid JSON');}
         });
       });
     }catch{socket.destroy();}finally{pending.delete(socket);}
@@ -45,5 +54,6 @@ export function installMultiplayer(server,store,config){
       if(p.hash&&!p.checking){p.checking=true;identity(p.hash).then(user=>{if(!user)ws.close(4003,'Session expired');else{p.name=user.login;p.avatar=user.avatar||null;}}).catch(()=>ws.close(1011,'Identity unavailable')).finally(()=>p.checking=false);}
     }
   },15000);heartbeat.unref();
-  return {close(){closed=true;clearInterval(tick);clearInterval(heartbeat);server.off('upgrade',upgrade);for(const socket of pending)socket.destroy();for(const ws of wss.clients)ws.terminate();peers.clear();return new Promise(r=>wss.close(r));}};
+  const checkpoint=setInterval(()=>{for(const peer of peers.values())void save(peer);},5000);checkpoint.unref();
+  return {async close(){closed=true;clearInterval(tick);clearInterval(heartbeat);clearInterval(checkpoint);server.off('upgrade',upgrade);for(const socket of pending)socket.destroy();for(const peer of peers.values())void save(peer);for(const ws of wss.clients)ws.terminate();peers.clear();await Promise.all([...writes.values()]);await positions;return new Promise(r=>wss.close(r));}};
 }

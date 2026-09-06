@@ -85,7 +85,8 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
   function look(dx,dy){if(vehicles.active){vehicles.look(dx,dy);return;}yaw-=dx*.0025;pitch=THREE.MathUtils.clamp(pitch-dy*.0025,-1.4,1.4);camera.rotation.set(pitch,yaw,0);}
   const mouseLook=createMouseLook(look);
   const avatar=createAvatar(scene),cockpit=createCockpit(),viewCamera=camera.clone(),viewRay=new THREE.Raycaster();let thirdPerson=false;
-  const multiplayer=createMultiplayer(scene,{origin:()=>origin,onError});
+  let savedSpawn=null;
+  const multiplayer=createMultiplayer(scene,{origin:()=>origin,onError,onRestore(position){savedSpawn=position;if(walking)setWalk(true,{lockPointer:false});}});
   let avatarUrl=null,avatarLoading=false,lastAvatarSync=-15000;
   async function syncAvatar(){if(avatarLoading)return;avatarLoading=true;try{const response=await fetch('/api/avatar');if(!response.ok)return;const {url}=await response.json();if(url===avatarUrl)return;const gltf=url?await loader.loadAsync(url):null,model=gltf?.scene||null;if(model)model.traverse(o=>{if(o.isMesh)o.castShadow=o.receiveShadow=true;});const old=avatar.setModel(model,gltf?.animations||[]);if(old)dispose(old);avatarUrl=url;renderer.shadowMap.needsUpdate=true;}catch{}finally{avatarLoading=false;}}
   document.addEventListener('keydown',e=>{if(e.code!=='KeyO'||e.repeat||!walking||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.target.isContentEditable||document.querySelector('dialog[open]'))return;e.preventDefault();thirdPerson=!thirdPerson;mouseLook.reset();canvas.dataset.perspective=thirdPerson?'third':'first';});
@@ -157,7 +158,25 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
   document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.target.isContentEditable||document.querySelector('dialog[open]'))return;if(!walking&&['Space','Escape'].includes(e.code))return;if(e.code==='Escape'){paused=true;keys.clear();document.exitPointerLock?.();}if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','Space'].includes(e.code)){e.preventDefault();if(walking&&e.code==='Space'&&!e.repeat&&camera.position.y<=floorAt(camera.position.x,camera.position.z)+1.71&&!paused)velocity=6;keys.add(e.code);}});
   document.addEventListener('focusin',()=>keys.clear());document.addEventListener('visibilitychange',()=>keys.clear());
   document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();paused=true;});
-  function setWalk(value,{lockPointer=true}={}){if(value){thirdPerson=false;landDrawing=false;document.body.dataset.land='false';controls.enableRotate=true;}walking=value;controls.enabled=!value;keys.clear();velocity=0;atmosphere.setWalking(value);document.body.dataset.walk=String(value);document.querySelector('#walk-hud').hidden=!value;if(value){let z=origin.x===0&&origin.z===0?48:18,x=0;if(floorAt(x,z)<.5){let shore;search:for(let radius=16;radius<=1024;radius+=16)for(let i=0;i<16;i++){const sx=Math.cos(i*Math.PI/8)*radius,sz=z+Math.sin(i*Math.PI/8)*radius;if(floorAt(sx,sz)>=.5){shore={x:sx,z:sz};break search;}}if(!shore){setWalk(false);onError('这里是开阔海面，请先把地图移到岸边再开始散步');return;}x=shore.x;z=shore.z;}camera.position.set(x,floorAt(x,z)+1.7,z);yaw=0;pitch=-.08;camera.rotation.set(pitch,yaw,0);if(lockPointer)lock();else{paused=true;mouseLook.reset();}}else{document.exitPointerLock?.();const h=terrain.surface(origin.x*PLOT.cell,origin.z*PLOT.cell);camera.position.set(130,h+150,170);controls.target.set(0,h,0);controls.update();}}
+  function setWalk(value,options={}){
+    enterWalk(value,options);
+    if(!value||!walking||!savedSpawn)return;
+    const p=savedSpawn;savedSpawn=null;
+    standUp();vehicles.stop();
+    moveOrigin(Math.round(p.x/PLOT.cell),Math.round(p.z/PLOT.cell),false);
+    let x=p.x-origin.x*PLOT.cell,z=p.z-origin.z*PLOT.cell;
+    camera.position.set(x,terrain.surface(p.x,p.z)+1.7,z);
+    if(blocked(x,z,camera.position.y)){
+      let found=false;
+      search:for(let radius=2;radius<=1024;radius*=2)for(let i=0;i<32;i++){
+        const sx=x+Math.cos(i*Math.PI/16)*radius,sz=z+Math.sin(i*Math.PI/16)*radius,h=terrain.surface(origin.x*PLOT.cell+sx,origin.z*PLOT.cell+sz);
+        if(!blocked(sx,sz,h+1.7)){x=sx;z=sz;found=true;break search;}
+      }
+      if(!found){onError('上次位置暂时无法站立，已返回默认出生点');moveOrigin(0,0,false);enterWalk(true,options);return;}
+    }
+    camera.position.set(x,floorAt(x,z)+1.7,z);yaw=p.yaw;avatarYaw=p.yaw;pitch=-.08;camera.rotation.set(pitch,yaw,0);velocity=0;keys.clear();mouseLook.reset();
+  }
+  function enterWalk(value,{lockPointer=true}={}){if(value){thirdPerson=false;landDrawing=false;document.body.dataset.land='false';controls.enableRotate=true;}walking=value;controls.enabled=!value;keys.clear();velocity=0;atmosphere.setWalking(value);document.body.dataset.walk=String(value);document.querySelector('#walk-hud').hidden=!value;if(value){let z=origin.x===0&&origin.z===0?48:18,x=0;if(floorAt(x,z)<.5){let shore;search:for(let radius=16;radius<=1024;radius+=16)for(let i=0;i<16;i++){const sx=Math.cos(i*Math.PI/8)*radius,sz=z+Math.sin(i*Math.PI/8)*radius;if(floorAt(sx,sz)>=.5){shore={x:sx,z:sz};break search;}}if(!shore){setWalk(false);onError('这里是开阔海面，请先把地图移到岸边再开始散步');return;}x=shore.x;z=shore.z;}camera.position.set(x,floorAt(x,z)+1.7,z);yaw=0;pitch=-.08;camera.rotation.set(pitch,yaw,0);if(lockPointer)lock();else{paused=true;mouseLook.reset();}}else{document.exitPointerLock?.();const h=terrain.surface(origin.x*PLOT.cell,origin.z*PLOT.cell);camera.position.set(130,h+150,170);controls.target.set(0,h,0);controls.update();}}
   let mapOpen=false;
   function frame(now){requestAnimationFrame(frame);if(document.hidden||!ready||mapOpen){lastTime=now;return;}syncLandView();const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;
     if(!walking&&vehicles.active)vehicles.stop();vehicles.update(dt,keys,walking&&!paused,camera);

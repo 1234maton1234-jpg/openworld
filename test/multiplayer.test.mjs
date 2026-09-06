@@ -29,11 +29,16 @@ test('one shared world broadcasts verified identities, proximity and disconnects
     send(a,0);send(b,3);await wait(()=>b.messages.some(m=>m.type==='snapshot'&&m.players.length===1));
     const other=b.messages.filter(m=>m.type==='snapshot').at(-1).players[0];assert.equal(other.name,'test-user-1001');assert.notEqual(other.name,'Imposter');
     const replacement=await connect(auth.cookie);await wait(()=>a.ws.readyState===WebSocket.CLOSED);assert.equal(a.ws._closeCode,4001);
+    await wait(()=>replacement.messages.some(m=>m.type==='welcome'));assert.equal(replacement.messages.find(m=>m.type==='welcome').position.x,0);
     a.ws=replacement.ws;a.messages=replacement.messages;
     send(a,6,{moving:true,vehicleType:'bike'});await wait(()=>b.messages.some(m=>m.players?.some(p=>p.x===6&&p.vehicleType==='bike')));
     send(a,1000);await wait(()=>b.messages.filter(m=>m.type==='snapshot').at(-1)?.players.length===0);
     send(a,0);await wait(()=>b.messages.filter(m=>m.type==='snapshot').at(-1)?.players.length===1);
+    send(a,27,{vehicleType:'car'});await wait(()=>b.messages.some(m=>m.players?.some(p=>p.x===27)));
+    send(a,999,{active:false});
     a.ws.close();await wait(()=>b.messages.filter(m=>m.type==='snapshot').at(-1)?.players.length===0);
+    const returned=await connect(auth.cookie);await wait(()=>returned.messages.some(m=>m.type==='welcome'));const welcome=returned.messages.find(m=>m.type==='welcome');assert.equal(welcome.position.x,27);assert.equal(welcome.userId,'1001');
+    assert.equal(b.messages.find(m=>m.type==='welcome').position,null);
     const malformed=await connect();malformed.ws.send(JSON.stringify({type:'pose',pose:{x:'fake',y:4,z:0,yaw:0}}));await wait(()=>malformed.ws.readyState===WebSocket.CLOSED);assert.equal(malformed.ws._closeCode,1008);
     const denied=new WebSocket(config.url.replace('http','ws')+'/realtime',{headers:{Origin:'https://untrusted.example'}});clients.push(denied);await new Promise(r=>denied.once('error',r));
   }finally{for(const ws of clients)ws.terminate();await hub.close();await new Promise(r=>server.close(r));await store.close();rmSync(dir,{recursive:true,force:true});}
