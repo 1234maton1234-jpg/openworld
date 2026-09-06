@@ -4,8 +4,9 @@ export function playerPose(value){
   if(!value||typeof value!=='object')return null;
   const {x,y,z,yaw}=value,limit=MAX_COORDINATE*PLOT.cell;
   if(![x,y,z,yaw].every(Number.isFinite)||Math.abs(x)>limit||Math.abs(z)>limit||y< -200||y>2000)return null;
+  let personalCar=null;if(value.personalCar){const c=value.personalCar;if(![c.x,c.y,c.z,c.yaw].every(Number.isFinite)||Math.abs(c.x)>limit||Math.abs(c.z)>limit||c.y< -200||c.y>2000)return null;personalCar={x:c.x,y:c.y,z:c.z,yaw:Math.atan2(Math.sin(c.yaw),Math.cos(c.yaw)),phase:Number.isFinite(c.phase)?c.phase%(Math.PI*2):0,steer:Number.isFinite(c.steer)?Math.max(-.6,Math.min(.6,c.steer)):0,driving:c.driving===true};}
   return {x,y,z,yaw:Math.atan2(Math.sin(yaw),Math.cos(yaw)),active:value.active===true,moving:value.moving===true,running:value.running===true,seated:value.seated===true,
-    vehicleType:['bike','car'].includes(value.vehicleType)?value.vehicleType:null,crankPhase:Number.isFinite(value.crankPhase)?value.crankPhase%(2*Math.PI):0};
+    vehicleType:['bike','car'].includes(value.vehicleType)?value.vehicleType:null,crankPhase:Number.isFinite(value.crankPhase)?value.crankPhase%(2*Math.PI):0,personalCar};
 }
 export function blendPose(a,b,t){
   const distance=Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z);if(distance>40)return {...b};

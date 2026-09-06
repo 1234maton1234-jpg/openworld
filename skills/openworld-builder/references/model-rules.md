@@ -43,6 +43,14 @@ These four tiers are a modeling convention for building and avatar emissive mate
 - Building models remain static unless separately requested; this rigging requirement is specific to characters.
 - `avatar set` replaces the current user's character directly and does not enter the building review queue. Use the same GitHub identity as the game. The client polls for updates roughly every 15 seconds.
 
+## Vehicles
+
+- Personal vehicles use the existing small-car driving, collision and cockpit behavior. Use meters, Y up, front facing -Z; width at most 1.9 m, height 0.5–2 m, length at most 4.1 m. The complete model is centered in X/Z and its bottom rests on the ground. The driving seat/camera stays at the existing car position (center X/Z, eye height 1.25 m); keep that space clear for first-person driving. Model geometry does not change the collision footprint or seat position.
+- Export a self-contained static PBR GLB within the same GLB resource limits above; no skins, baked animation clips, morph targets or extensions. Vehicle models do not need humanoid bones.
+- For animated wheels, export four separate assemblies named `wheel_fl`, `wheel_fr`, `wheel_rl`, `wheel_rr` (front/rear, left/right). Each node origin must be at its axle center, with every tire/rim part beneath that node. Do not nest one wheel assembly in another. The runtime rotates the assembly around car X and steers front wheels around car Y. Unnamed or body-merged wheels stay static; inspect rolling, steering and first-person visibility in game before claiming correct integration.
+- Upload with `node "<skill>/scripts/openworld.mjs" vehicle set "car.glb"` using the player's GitHub identity, or the game account panel's vehicle upload button. This replaces only that account's vehicle model, becomes available publicly and does not enter building review. Do not claim it was reviewed. Existing online appearances may take about 15 seconds to update.
+- `P` summons or recalls one personal car; `F` enters/exits. Without a custom model the default car is used. Summoning needs nearby clear, dry ground. Disconnecting recalls the vehicle; the uploaded model remains saved for next time. Cars are personal instances, not shared vehicles that other players can claim or drive.
+
 ## Review
 
 - At most one pending submission per user, 20 submission versions and 20 unsubmitted drafts under current implementation.

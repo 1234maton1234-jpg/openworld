@@ -1,6 +1,6 @@
 ---
 name: openworld-builder
-description: 为 openworld 玩家制作符合真实领地边界的建筑或角色 GLB，读取领地与建模规则，使用随附 CLI 登录、上传模型和提交审核。用于在自己的地皮建造、替换角色、上传或审核提交，不用于修改世界生成算法。
+description: 为 openworld 玩家制作符合真实领地边界的建筑、绑骨角色或个人载具 GLB，读取建模规则，使用随附 CLI 登录、上传模型和提交审核。用于地皮建造、替换角色、自定义小汽车、上传或审核提交，不用于修改世界生成算法。
 ---
 
 # openworld Builder
@@ -29,6 +29,8 @@ Token login remains an explicit fallback with `login --token` using `OPENWORLD_G
 
 ## Build
 
+For a personal vehicle, read the vehicle contract in [references/model-rules.md](references/model-rules.md#vehicles). No plot is needed: vehicles use the small-car class and `vehicle set FILE.glb`. Do not use the building submission flow or avatar rigging requirements for cars.
+
 For character creation, rigging is mandatory: deliver a genuinely skinned humanoid model with usable joint weights, and verify idle, walking/running, sitting and cycling movement against the default character’s behavior. Static geometry, named body groups or an unweighted armature do not satisfy this requirement. Read the avatar section for the supported animation contract. Do not silently downgrade a requested character to a static upload to bypass validation.
 
 For a building, obtain the current owned plot first. If none exists, ask the player to claim a plot in the game; never guess a boundary. Read [references/model-rules.md](references/model-rules.md) before modeling or export. Prefer live server numeric limits; the reference supplies format and placement constraints that the rules response does not describe.
@@ -45,6 +47,7 @@ Execute external operations within the user's requested scope. A local modeling 
 
 ```sh
 node "<skill>/scripts/openworld.mjs" avatar set "character.glb"
+node "<skill>/scripts/openworld.mjs" vehicle set "car.glb"
 node "<skill>/scripts/openworld.mjs" plot upload "building.glb" --title "领地名字"
 node "<skill>/scripts/openworld.mjs" plot submit DRAFT_ID
 ```

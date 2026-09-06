@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {releaseCar} from './custom-car.mjs';
 
 export const VEHICLES={bike:{name:'单车',max:9,accel:3,reverse:2,radius:.4,length:1.8},car:{name:'小汽车',max:30,accel:7.5,reverse:5,radius:.95,length:4.1}};
 const approach=(a,b,rate,dt)=>a+(b-a)*(1-Math.exp(-rate*dt));
@@ -60,11 +61,19 @@ export function createVehicleModel(type){
 }
 export function createVehicles(scene,{surface,obstacle,origin}){
   const items=['bike','car'].map((type,i)=>{const {group,wheels,pedals}=createVehicleModel(type);scene.add(group);return {type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,group,wheels,pedals,y:null};});
-  let active=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;
+  let active=null,personal=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;
   function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.y=v.heading;v.group.updateMatrixWorld(true);}}
   function clear(v,x,z,heading,base){const c=VEHICLES[v.type];for(const along of [-c.length/2+.2,0,c.length/2-.2]){const px=x-Math.sin(heading)*along,pz=z-Math.cos(heading)*along,h=surface(px,pz);if(h<.5||Math.abs(h-base)>.45||obstacle(px,pz,h,c.radius))return false;for(const other of items)if(other!==v&&Math.hypot(px-other.x,pz-other.z)<c.radius+VEHICLES[other.type].radius)return false;}return true;}
   function exit(){if(!active)return null;const v=active,c=VEHICLES[v.type];for(const side of [-1,1])for(const along of [0,-c.length/2-1,c.length/2+1]){const x=v.x+Math.cos(v.heading)*(c.radius+1)*side-Math.sin(v.heading)*along,z=v.z-Math.sin(v.heading)*(c.radius+1)*side-Math.cos(v.heading)*along,h=surface(x,z);if(h>=.5&&Math.abs(h-v.y)<1&&!obstacle(x,z,h,.35)){active=null;v.speed=0;return {x,y:h+1.7,z,heading:v.heading};}}return null;}
   return {
+    get personal(){return personal;},
+    replacePersonal(model){if(!personal){releaseCar(model.group);return;}releaseCar(personal.group);Object.assign(personal,model);scene.add(personal.group);rebase();},
+    summon(x,z,heading,model){
+      if(personal)return false;const v={type:'car',x,z,heading,speed:0,crankPhase:0,y:null};
+      let found=false;for(const angle of [0,-Math.PI/4,Math.PI/4,Math.PI/2,-Math.PI/2,Math.PI]){const px=x-Math.sin(heading+angle)*6,pz=z-Math.cos(heading+angle)*6,h=surface(px,pz);if(clear(v,px,pz,heading,h)){v.x=px;v.z=pz;v.y=h;found=true;break;}}
+      if(!found)return false;Object.assign(v,model||createVehicleModel('car'));personal=v;items.push(v);scene.add(v.group);rebase();return true;
+    },
+    recall(){if(!personal)return false;if(active===personal){active.speed=0;active=null;}const v=personal;personal=null;items.splice(items.indexOf(v),1);releaseCar(v.group);return true;},
     get active(){return active;},
     rebase,
     targets(){return items.map(v=>({root:v.group,node:v.group,position:[0,.8,0],yaw:v.heading,vehicle:v}));},

@@ -13,7 +13,7 @@ export function installMultiplayer(server,store,config){
     writes.set(peer.userId,write);write.finally(()=>{if(writes.get(peer.userId)===write)writes.delete(peer.userId);});return write;
   }
   const token=req=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('town_session='))?.slice(13);
-  async function identity(hash){return hash?store.db.prepare('SELECT u.id,u.login,a.id AS avatar FROM sessions s JOIN users u ON s.user=u.id LEFT JOIN avatars a ON a.owner=u.id WHERE s.hash=? AND s.expires>?').get(hash,Date.now()):null;}
+  async function identity(hash){return hash?store.db.prepare('SELECT u.id,u.login,a.id AS avatar,v.id AS vehicle FROM sessions s JOIN users u ON s.user=u.id LEFT JOIN avatars a ON a.owner=u.id LEFT JOIN vehicles v ON v.owner=u.id WHERE s.hash=? AND s.expires>?').get(hash,Date.now()):null;}
   function send(ws,value){if(ws.readyState!==WebSocket.OPEN)return;if(ws.bufferedAmount>131072){ws.terminate();return;}ws.send(JSON.stringify(value));}
   async function upgrade(req,socket,head){
     socket.on('error',()=>{});
@@ -28,12 +28,12 @@ export function installMultiplayer(server,store,config){
       wss.handleUpgrade(req,socket,head,ws=>{
         const id=randomUUID(),peer={id,ip,hash:user?hash:null,userId:user?.id,name:user?.login||'访客·'+id.slice(0,6),avatar:user?.avatar||null,pose:null,alive:true,updated:Date.now(),window:Date.now(),messages:0,checking:false};
         if(user)for(const [other,p] of peers)if(p.userId===user.id){resume=p.lastPosition||resume;void save(p);peers.delete(other);other.close(4001,'Account connected elsewhere');}
-        peers.set(ws,peer);send(ws,{type:'welcome',id,name:peer.name,userId:user?.id||null,position:resume});
+        peer.vehicle=user?.vehicle||null;peers.set(ws,peer);send(ws,{type:'welcome',id,name:peer.name,userId:user?.id||null,position:resume});
         ws.on('error',()=>{});ws.on('pong',()=>{peer.alive=true;});ws.on('close',()=>{if(peers.has(ws)){void save(peer);peers.delete(ws);}});
         ws.on('message',(bytes,binary)=>{
           if(!peers.has(ws))return;const now=Date.now();if(now-peer.window>=1000){peer.window=now;peer.messages=0;}
           if(binary||++peer.messages>30){ws.close(1008,'Invalid presence traffic');return;}
-          try{const message=JSON.parse(bytes);if(message.type!=='pose')return;const pose=playerPose(message.pose);if(!pose){ws.close(1008,'Invalid pose');return;}peer.pose=pose;peer.updated=now;if(pose.active){peer.lastPosition=pose;peer.dirty=true;}}catch{ws.close(1008,'Invalid JSON');}
+          try{const message=JSON.parse(bytes);if(message.type!=='pose')return;const pose=playerPose(message.pose);if(!pose){ws.close(1008,'Invalid pose');return;}if(pose.personalCar&&!peer.pose?.personalCar&&peer.hash&&!peer.checking&&now-(peer.vehicleChecked||0)>5000){peer.vehicleChecked=now;peer.checking=true;identity(peer.hash).then(user=>{if(user)peer.vehicle=user.vehicle||null;else ws.close(4003,'Session expired');}).catch(()=>{}).finally(()=>{peer.checking=false;});}peer.pose=pose;peer.updated=now;if(pose.active){peer.lastPosition=pose;peer.dirty=true;}}catch{ws.close(1008,'Invalid JSON');}
         });
       });
     }catch{socket.destroy();}finally{pending.delete(socket);}
@@ -41,17 +41,17 @@ export function installMultiplayer(server,store,config){
   server.on('upgrade',upgrade);
   const tick=setInterval(()=>{
     const cells=new Map(),now=Date.now();
-    for(const p of peers.values())if(p.pose?.active&&now-p.updated<45000){const key=Math.floor(p.pose.x/PLAYER_RADIUS)+','+Math.floor(p.pose.z/PLAYER_RADIUS);if(!cells.has(key))cells.set(key,[]);cells.get(key).push(p);}
+    for(const p of peers.values())if(p.pose&&now-p.updated<45000)for(const location of [p.pose.active?p.pose:null,p.pose.personalCar].filter(Boolean)){const key=Math.floor(location.x/PLAYER_RADIUS)+','+Math.floor(location.z/PLAYER_RADIUS);if(!cells.has(key))cells.set(key,new Set());cells.get(key).add(p);}
     for(const [ws,self] of peers){
-      if(!self.pose)continue;const candidates=[],cx=Math.floor(self.pose.x/PLAYER_RADIUS),cz=Math.floor(self.pose.z/PLAYER_RADIUS);
-      for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++)for(const p of cells.get((cx+dx)+','+(cz+dz))||[]){const d=Math.hypot(p.pose.x-self.pose.x,p.pose.z-self.pose.z);if(p!==self&&d<=PLAYER_RADIUS)candidates.push({p,d});}
-      send(ws,{type:'snapshot',players:candidates.sort((a,b)=>a.d-b.d).slice(0,PLAYER_LIMIT).map(({p})=>({...p.pose,id:p.id,name:p.name,avatar:p.avatar,moving:p.pose.moving&&now-p.updated<500}))});
+      if(!self.pose)continue;const candidates=new Map(),cx=Math.floor(self.pose.x/PLAYER_RADIUS),cz=Math.floor(self.pose.z/PLAYER_RADIUS);
+      for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++)for(const p of cells.get((cx+dx)+','+(cz+dz))||[]){const car=p.pose.personalCar,d=Math.min(p.pose.active?Math.hypot(p.pose.x-self.pose.x,p.pose.z-self.pose.z):Infinity,car?Math.hypot(car.x-self.pose.x,car.z-self.pose.z):Infinity);if(p!==self&&d<=PLAYER_RADIUS)candidates.set(p.id,{p,d});}
+      send(ws,{type:'snapshot',players:[...candidates.values()].sort((a,b)=>a.d-b.d).slice(0,PLAYER_LIMIT).map(({p})=>({...p.pose,id:p.id,name:p.name,avatar:p.avatar,carModel:p.vehicle,moving:p.pose.moving&&now-p.updated<500}))});
     }
   },100);tick.unref();
   const heartbeat=setInterval(()=>{
     for(const [ws,p] of peers){
       if(!p.alive){ws.terminate();continue;}p.alive=false;ws.ping();
-      if(p.hash&&!p.checking){p.checking=true;identity(p.hash).then(user=>{if(!user)ws.close(4003,'Session expired');else{p.name=user.login;p.avatar=user.avatar||null;}}).catch(()=>ws.close(1011,'Identity unavailable')).finally(()=>p.checking=false);}
+      if(p.hash&&!p.checking){p.checking=true;identity(p.hash).then(user=>{if(!user)ws.close(4003,'Session expired');else{p.name=user.login;p.avatar=user.avatar||null;p.vehicle=user.vehicle||null;}}).catch(()=>ws.close(1011,'Identity unavailable')).finally(()=>p.checking=false);}
     }
   },15000);heartbeat.unref();
   const checkpoint=setInterval(()=>{for(const peer of peers.values())void save(peer);},5000);checkpoint.unref();
