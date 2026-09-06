@@ -7,6 +7,16 @@ import {createUrbanTerrain} from '../shared/urban-terrain.mjs';
 import {createHydrology} from '../shared/hydrology.mjs';
 import {generateUrbanRegion} from '../shared/urban-plan.mjs';
 
+test('eight metre sidewalk lamps are instanced without the old count cap',()=>{
+  const view=createCityView(new THREE.Scene());
+  const roads=Array.from({length:20},(_,i)=>({id:String(i),width:10,points:[[-300,4,i*30],[300,4,i*30]]}));
+  view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads},[]);
+  const lamps=view.objects.filter(o=>o.userData.streetLight);
+  assert.equal(lamps.length,2);assert.ok(lamps.every(o=>o.isInstancedMesh&&o.count>192));
+  assert.equal(lamps[0].geometry.parameters.height,8);
+  const matrix=new THREE.Matrix4();lamps[0].getMatrixAt(0,matrix);assert.equal(matrix.elements[13],8);
+});
+
 test('road join caps follow the approach slope instead of cutting through it',()=>{
   const view=createCityView(new THREE.Scene()),points=[[-60,7,0],[0,10,0],[60,13,0]],roads=[{id:'slope',width:16,points,sections:[{kind:'land',points:points.slice(0,2)},{kind:'land',points:points.slice(1)}]}];
   view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads},[]);

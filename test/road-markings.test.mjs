@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {roadMarkings} from '../src/road-markings.mjs';
 const road=(id,points,width=10)=>({id,points,width});
+
+test('both sidewalks have regularly spaced lights even on densely sampled roads',()=>{
+  const points=Array.from({length:101},(_,i)=>[i*2,4,0]);
+  const result=roadMarkings([road('a',points)]);
+  for(const side of [-1,1]){
+    const lamps=result.furniture.filter(v=>v.p[2]*side>0);
+    assert.ok(lamps.length>=5);assert.ok(lamps.every(v=>Math.abs(v.p[2])===8));
+  }
+});
+
+test('bridge approaches omit junction decorations but retain lane lines and sidewalk lamps',()=>{
+  const bridge={...road('a',[[-100,8,0],[100,8,0]]),sections:[{kind:'crossing',points:[[-100,8,0],[100,8,0]]}]};
+  const result=roadMarkings([bridge,road('b',[[0,8,-100],[0,8,100]])]);
+  assert.equal(result.crosswalks,2);
+  for(const polygon of [...result.white,...result.stops,...result.arrows])assert.ok(polygon.every(p=>Math.abs(p[2])>5));
+  assert.ok(result.yellow.length);assert.ok(result.furniture.some(v=>v.p[1]===8&&Math.abs(v.p[2])===8));
+});
 test('overlapping parallel corridors use one marking layout with stable ownership',()=>{
   const main=road('main',[[-100,4,0],[100,4,0]],28),other=road('side',[[-100,4,2],[100,4,2]],18);
   const single=roadMarkings([main]),both=roadMarkings([main,other]);
@@ -20,7 +37,8 @@ test('only the shared portion loses secondary markings',()=>{
 });
 test('overlapping approaches do not duplicate crossings or street furniture',()=>{
   const result=roadMarkings([road('a',[[-100,4,0],[100,4,0]],28),road('b',[[-100,4,2],[100,4,2]],18),road('c',[[0,4,0],[0,4,100]],18)]);
-  assert.equal(result.crosswalks,3);assert.equal(result.furniture.length,3);
+  assert.equal(result.crosswalks,3);assert.ok(result.furniture.length>3);
+  for(const lamp of result.furniture)for(const other of result.furniture)if(lamp!==other)assert.ok(Math.hypot(lamp.p[0]-other.p[0],lamp.p[2]-other.p[2])>=12);
 });
 
 test('short links between nearby junctions do not receive competing approach markings',()=>{

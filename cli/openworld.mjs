@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+import {readFile,writeFile,mkdir,chmod,unlink,stat} from 'node:fs/promises';
+import {homedir} from 'node:os';
+import {join,dirname} from 'node:path';
+import {createInterface} from 'node:readline/promises';
+import {pathToFileURL} from 'node:url';
+
+export async function run(args=process.argv.slice(2)){
+  const options={};const words=[];for(let i=0;i<args.length;i++){if(args[i].startsWith('--')){const key=args[i].slice(2);if(!['server','title','demo','config','help'].includes(key))throw new Error('未知参数 --'+key);options[key]=['demo','help'].includes(key)?true:args[++i];if(options[key]===undefined)throw new Error('参数缺少值');}else words.push(args[i]);}
+  if(!words.length||options.help){console.log('openworld login [--demo] [--server URL]\nopenworld whoami\nopenworld logout\nopenworld avatar set FILE.glb\nopenworld plot upload FILE.glb --title NAME\nopenworld plot submit DRAFT_ID\nGitHub 登录从 OPENWORLD_GITHUB_TOKEN 或标准输入读取 Token。');return;}
+  const configPath=options.config||process.env.OPENWORLD_CLI_CONFIG||join(homedir(),'.openworld','credentials.json');let saved;try{saved=JSON.parse(await readFile(configPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+  const url=new URL(options.server||saved?.server||'http://127.0.0.1:8787');if(url.username||url.password||url.pathname!=='/'||url.search||url.hash||!(url.protocol==='https:'||url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw new Error('服务器须为 HTTPS 源地址；仅本机允许 HTTP');const server=url.origin;
+  const login=words[0]==='login';if(!login&&(!saved||saved.server!==server))throw new Error('请先对该服务器执行 login');
+  async function request(path,{method='GET',json,body}={}){const headers={Origin:server};if(!login){headers.Cookie=saved.cookie;headers['X-CSRF-Token']=saved.csrf;}if(json){headers['Content-Type']='application/json';body=JSON.stringify(json);}else if(body)headers['Content-Type']='model/gltf-binary';const res=await fetch(server+path,{method,headers,body,redirect:'error',signal:AbortSignal.timeout(60000)});const result=await res.json();if(!res.ok)throw new Error(result.error||'请求失败');return {result,cookie:res.headers.get('set-cookie')?.split(';')[0]};}
+  if(login){let json,path='/api/demo-login';if(!options.demo){let token=process.env.OPENWORLD_GITHUB_TOKEN;if(!token){if(process.stdin.isTTY){const rl=createInterface({input:process.stdin,output:process.stdout});try{await rl.question('为避免回显 Token，请设置 OPENWORLD_GITHUB_TOKEN 或通过管道输入后重试。按 Enter 退出。');}finally{rl.close();}throw new Error('未提供 GitHub Token');}else{token='';for await(const chunk of process.stdin){token+=chunk;if(token.length>1024)throw new Error('Token 过长');}token=token.trim();}}json={githubToken:token};path='/api/cli/login';}
+    const {result,cookie}=await request(path,{method:'POST',json});if(!cookie||!result.csrf)throw new Error('服务器未返回有效会话');await mkdir(dirname(configPath),{recursive:true,mode:0o700});await writeFile(configPath,JSON.stringify({server,cookie,csrf:result.csrf}),{mode:0o600});await chmod(configPath,0o600);console.log('已登录 @'+result.user.login);return;
+  }
+  if(words[0]==='logout'){await request('/api/logout',{method:'POST'});await unlink(configPath);console.log('已退出');return;}
+  if(words[0]==='whoami'){const {result}=await request('/api/session');if(!result.user)throw new Error('会话已过期，请重新登录');console.log(JSON.stringify(result.user,null,2));return;}
+  if(words[0]==='plot'&&words[1]==='submit'){if(!/^[a-f0-9-]{36}$/.test(words[2]||''))throw new Error('请指定 upload 返回的模型 ID');console.log(JSON.stringify((await request('/api/cli/plots/'+words[2]+'/submit',{method:'POST'})).result,null,2));return;}
+  const avatar=words[0]==='avatar'&&words[1]==='set',plot=words[0]==='plot'&&words[1]==='upload';if(!avatar&&!plot)throw new Error('未知命令，使用 --help');if(!words[2])throw new Error('请指定 GLB 文件');if(plot&&!options.title)throw new Error('请指定 --title');const file=await stat(words[2]);if(!file.isFile()||file.size>12*1024*1024)throw new Error('模型须为不超过 12 MB 的文件');const body=await readFile(words[2]);const path=avatar?'/api/avatar':'/api/cli/plots/upload?title='+encodeURIComponent(options.title);console.log(JSON.stringify((await request(path,{method:avatar?'PUT':'POST',body})).result,null,2));
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)run().catch(e=>{console.error(e.message);process.exitCode=1;});

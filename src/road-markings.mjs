@@ -28,12 +28,13 @@ export function junctionHeight(patches,x,z){
   }
 }
 export function roadMarkings(roads){
-  const segments=[],seen=new Map(),bins=new Map();
+  const segments=[],seen=new Map(),bins=new Map(),stations=new Map();
   for(const road of [...roads].sort((a,b)=>String(a.id).localeCompare(String(b.id))))for(const path of road.sections||[road])for(let i=1;i<path.points.length;i++){
     const a=path.points[i-1],b=path.points[i];if(distance(a,b)<.01)continue;
-    const id=[key(a),key(b)].sort().join('|'),width=path.width||road.width;
-    if(seen.has(id)){seen.get(id).width=Math.max(seen.get(id).width,width);continue;}
-    const s={a,b,width,source:String(road.id),cuts:[0,1]};seen.set(id,s);segments.push(s);
+    const id=[key(a),key(b)].sort().join('|'),width=path.width||road.width,station=stations.get(road)||0,bridge=path.kind==='crossing'||(!road.sections&&road.bridge===true);
+    stations.set(road,station+distance(a,b));
+    if(seen.has(id)){seen.get(id).width=Math.max(seen.get(id).width,width);seen.get(id).bridge||=bridge;continue;}
+    const s={a,b,width,bridge,station,source:String(road.id),cuts:[0,1]};seen.set(id,s);segments.push(s);
   }
   for(let i=0;i<segments.length;i++){
     const s=segments[i],candidates=new Set();
@@ -54,8 +55,8 @@ export function roadMarkings(roads){
   function node(p){const id=key(p);if(!nodes.has(id))nodes.set(id,{p,arms:[]});return nodes.get(id);}
   for(const s of segments){const cuts=[...new Set(s.cuts)].sort((a,b)=>a-b);for(let i=1;i<cuts.length;i++){
     const a=node(mix(s.a,s.b,cuts[i-1])),b=node(mix(s.a,s.b,cuts[i]));if(distance(a.p,b.p)<.01)continue;
-    const id=[key(a.p),key(b.p)].sort().join('|');if(edges.has(id)){edges.get(id).width=Math.max(edges.get(id).width,s.width);continue;}
-    const edge={a,b,width:s.width,source:s.source};edges.set(id,edge);a.arms.push({to:b,edge});b.arms.push({to:a,edge});
+    const id=[key(a.p),key(b.p)].sort().join('|');if(edges.has(id)){edges.get(id).width=Math.max(edges.get(id).width,s.width);edges.get(id).bridge||=s.bridge;continue;}
+    const edge={a,b,width:s.width,bridge:s.bridge,station:s.station+distance(s.a,s.b)*cuts[i-1],source:s.source};edges.set(id,edge);a.arms.push({to:b,edge});b.arms.push({to:a,edge});
   }}
   const corridors=new Map();
   for(const e of edges.values()){
@@ -91,7 +92,7 @@ export function roadMarkings(roads){
     }
   }
   function sample(start,arm,length,paint=false){let from=start,to=arm.to,remaining=length,edge=arm.edge;const visited=new Set([start]);
-    while(true){const span=distance(from.p,to.p);if(remaining<=span){const at=from===edge.a?remaining:span-remaining;if(paint&&!edge.paint.some(([lo,hi])=>at>=lo&&at<=hi))return null;return mix(from.p,to.p,remaining/span);}remaining-=span;if(to.arms.length!==2||visited.has(to))return null;visited.add(to);const next=to.arms.find(a=>a.to!==from);from=to;to=next.to;edge=next.edge;}
+    while(true){if(paint&&edge.bridge)return null;const span=distance(from.p,to.p);if(remaining<=span){const at=from===edge.a?remaining:span-remaining;if(paint&&!edge.paint.some(([lo,hi])=>at>=lo&&at<=hi))return null;return mix(from.p,to.p,remaining/span);}remaining-=span;if(to.arms.length!==2||visited.has(to))return null;visited.add(to);const next=to.arms.find(a=>a.to!==from);from=to;to=next.to;edge=next.edge;}
   }
   function approachRoom(start,arm){
     let from=start,to=arm.to,length=distance(from.p,to.p);const visited=new Set([start]);
@@ -108,9 +109,9 @@ export function roadMarkings(roads){
   }
   for(const n of junctions)for(const arm of n.arms){if(!approachRoom(n,arm))continue;const start=arm.setback-4.5,end=arm.setback-1,a=sample(n,arm,start,true),b=sample(n,arm,end,true);if(!a||!b||distance(a,b)<.01||!sample(n,arm,end+8,true))continue;
     const half=arm.edge.width/2-.6;for(let offset=-half;offset+.5<=half;offset+=1)white.push(quad(a,b,offset,offset+.5));crosswalks++;
-    const stopA=sample(n,arm,end+1.5),stopB=sample(n,arm,end+1.9);
+    const stopA=sample(n,arm,end+1.5,true),stopB=sample(n,arm,end+1.9,true);
     if(stopA&&stopB)stops.push(quad(stopA,stopB,.4,half));
-    const near=sample(n,arm,end+6),far=sample(n,arm,end+11);
+    const near=sample(n,arm,end+6,true),far=sample(n,arm,end+11,true);
     if(near&&far){const count=Math.max(1,Math.floor(arm.edge.width/2/3.5));for(let lane=0;lane<count;lane++){
       const offset=(lane+.5)*arm.edge.width/2/count,span=distance(far,near),nx=-(far[2]-near[2])/span,nz=(far[0]-near[0])/span;
       const at=(t,s)=>{const p=mix(near,far,t);return [p[0]+nx*s,p[1],p[2]+nz*s];};
@@ -122,7 +123,25 @@ export function roadMarkings(roads){
         const dx=(tip[0]-elbow[0])/1.35,dz=(tip[2]-elbow[2])/1.35,head=(back,side)=>[tip[0]-dx*back-dz*side,tip[1],tip[2]-dz*back+dx*side];arrows.push([head(0,-.03),head(0,.03),head(.8,.55),head(.8,-.55)]);
       }
     }}
-    const lamp=sample(n,arm,end+15),next=sample(n,arm,end+16);if(lamp&&next){const span=distance(lamp,next),offset=arm.edge.width/2+SIDEWALK_WIDTH-1;furniture.push({p:[lamp[0]-(next[2]-lamp[2])/span*offset,lamp[1],lamp[2]+(next[0]-lamp[0])/span*offset],angle:Math.atan2(next[0]-lamp[0],next[2]-lamp[2])});}
+  }
+  const lampBins=new Map();
+  for(const e of edges.values()){
+    const a=e.a.p,b=e.b.p,len=distance(a,b),dx=(b[0]-a[0])/len,dz=(b[2]-a[2])/len,offset=e.width/2+SIDEWALK_WIDTH-1;
+    for(let at=Math.ceil((e.station-16)/32)*32+16-e.station;at<len;at+=32){
+      if(!e.paint.some(([lo,hi])=>at>=lo&&at<=hi))continue;
+      const center=mix(a,b,at/len);
+      for(const side of [-1,1]){
+        const p=[center[0]-dz*offset*side,center[1],center[2]+dx*offset*side];
+        const roadsHere=corridors.get(Math.floor(p[0]/64)+','+Math.floor(p[2]/64))||[];
+        if(roadsHere.some(r=>{const c=r.a.p,d=r.b.p,span=distance(c,d),t=((p[0]-c[0])*(d[0]-c[0])+(p[2]-c[2])*(d[2]-c[2]))/(span*span);return t>=0&&t<=1&&Math.abs(p[1]-mix(c,d,t)[1])<2&&distance(p,mix(c,d,t))<r.width/2+.5;}))continue;
+        if(patches.some(v=>Math.abs(v.center[1]-p[1])<2&&distance(v.center,p)<v.radius&&v.road.every((c,i)=>{const d=v.road[(i+1)%v.road.length];return cross(d[0]-c[0],d[2]-c[2],p[0]-c[0],p[2]-c[2])>=0;})))continue;
+        const bx=Math.floor(p[0]/12),bz=Math.floor(p[2]/12);let nearby=false;
+        for(let x=bx-1;x<=bx+1;x++)for(let z=bz-1;z<=bz+1;z++)if((lampBins.get(x+','+z)||[]).some(q=>Math.abs(p[1]-q[1])<2&&distance(p,q)<12))nearby=true;
+        if(nearby)continue;
+        const id=bx+','+bz;if(!lampBins.has(id))lampBins.set(id,[]);lampBins.get(id).push(p);
+        furniture.push({p,angle:Math.atan2(dx,dz)});
+      }
+    }
   }
   return {yellow,white,lanes,stops,arrows,furniture,crosswalks,junctions:junctions.map(n=>n.p),patches};
 }

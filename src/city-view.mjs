@@ -24,10 +24,10 @@ export function createCityView(scene,invalidate=()=>{}){
   function markings(result){for(const [quads,material,kind] of [[result.yellow,yellowMat,'double-yellow'],[[...result.white,...result.lanes,...result.stops,...result.arrows],whiteMat,'crosswalk']]){if(!quads.length)continue;const vertices=[],indices=[];for(const quad of quads){const k=vertices.length/3;for(const p of quad)vertices.push(p[0]-origin.x*70,p[1]+.045,p[2]-origin.z*70);indices.push(k,k+1,k+3,k+1,k+2,k+3);}const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();const mesh=new THREE.Mesh(geometry,material);mesh.userData.roadMarking=kind;group.add(mesh);}}
   const poleMat=new THREE.MeshStandardMaterial({color:'#53615c',roughness:.8}),lampMat=new THREE.MeshStandardMaterial({color:'#ede5cb',emissive:'#e1ca92',emissiveIntensity:.45,roughness:.6});
   function streetLights(items){
-    const lamps=items.filter(v=>Math.abs(v.p[0]-origin.x*70)<600&&Math.abs(v.p[2]-origin.z*70)<600).slice(0,192);
+    const lamps=items;
     if(!lamps.length)return;
     const matrix=new THREE.Matrix4(),rotation=new THREE.Quaternion(),up=new THREE.Vector3(0,1,0);
-    for(const [size,height,material] of [[[.16,5,.16],2.5,poleMat],[[1.1,.16,.45],5,lampMat]]){
+    for(const [size,height,material] of [[[.22,8,.22],4,poleMat],[[1.5,.2,.55],8,lampMat]]){
       const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(...size),material,lamps.length);
       lamps.forEach(({p,angle},i)=>{rotation.setFromAxisAngle(up,angle);matrix.compose(new THREE.Vector3(p[0]-origin.x*70,p[1]+height,p[2]-origin.z*70),rotation,new THREE.Vector3(1,1,1));mesh.setMatrixAt(i,matrix);});
       mesh.instanceMatrix.needsUpdate=true;mesh.userData.streetLight=true;mesh.receiveShadow=true;group.add(mesh);

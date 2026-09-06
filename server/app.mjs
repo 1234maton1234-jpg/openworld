@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {createStore,RULES,coordinate,fail} from './store.mjs';
 import {installAuth,requireUser,requireAdmin} from './auth.mjs';
 import {validateModel} from './validate.mjs';
+import {installCliApi} from './cli-api.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 export function createApp(config){
@@ -20,6 +21,7 @@ export function createApp(config){
     next();
   });
   app.use(express.json({limit:'16kb'}));installAuth(app,store,config);
+  installCliApi(app,store,uploads);
   app.get('/api/world',(req,res)=>{const x=coordinate(Number(req.query.x??0)),z=coordinate(Number(req.query.z??0)),r=Number(req.query.radius??3);if(!Number.isInteger(r)||r<1||r>4)fail(400,'加载范围无效');res.json({plots:store.world(x,z,r),planning:{...store.planner.around(x,z),lots:[],freeform:true},rules:RULES});});
   app.get('/api/mine',requireUser,(req,res)=>res.json({plot:store.getPlot(req.user.id)||null,submissions:store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id)}));
   app.post('/api/plots/check',requireUser,(req,res)=>{store.rate('land-check:'+req.user.id,60);res.json(store.checkLand(req.body?.polygon));});

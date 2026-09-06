@@ -13,6 +13,13 @@ export function installAuth(app,store,config){
     next();
   });
   app.get('/api/session',(req,res)=>res.json({user:req.user||null,csrf:req.csrf||null,demo:config.demo,githubReady:!!(config.clientId&&config.clientSecret)}));
+  app.post('/api/cli/login',async(req,res)=>{
+    store.rate('cli-login:'+req.socket.remoteAddress,10,60000);
+    const token=req.body?.githubToken;if(typeof token!=='string'||token.length<10||token.length>512)fail(400,'请提供有效的 GitHub Token');
+    const response=await fetch('https://api.github.com/user',{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','User-Agent':'openworld-cli'},signal:AbortSignal.timeout(15000)}),user=await response.json();
+    if(!response.ok||!Number.isSafeInteger(user.id)||user.id<=0||typeof user.login!=='string')fail(401,'GitHub Token 验证失败');
+    res.json(session(req,res,store.upsertUser(String(user.id),user.login)));
+  });
   app.post('/api/logout',requireUser,(req,res)=>{db.prepare('DELETE FROM sessions WHERE hash=?').run(hash(cookie(req,'town_session')));res.clearCookie('town_session',cookieOptions);res.json({ok:true});});
   if(config.demo)app.post('/api/demo-login',(req,res)=>{
     if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)||req.headers.origin!==config.url)fail(403,'演示登录仅限本机');

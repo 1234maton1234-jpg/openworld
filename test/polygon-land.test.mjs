@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {polygonInfo,containsPolygon,polygonDistance} from '../shared/polygon-land.mjs';
-test('simple concave land is accepted but self intersections and narrow notches are rejected',()=>{
-  assert.equal(polygonInfo([[0,0],[48,0],[48,24],[24,24],[24,48],[0,48]]).area,1728);
+test('only convex land is accepted and self intersections and narrow notches are rejected',()=>{
+  assert.throws(()=>polygonInfo([[0,0],[48,0],[48,24],[24,24],[24,48],[0,48]]),/凸多边形/);
+  const square=[[0,0],[40,0],[40,40],[0,40]];
+  assert.equal(polygonInfo(square).area,1600);assert.equal(polygonInfo([...square].reverse()).area,1600);
   assert.throws(()=>polygonInfo([[0,0],[40,40],[0,40],[40,0]]));
   assert.throws(()=>polygonInfo([[0,0],[40,0],[40,40],[24,40],[24,16],[20,16],[20,40],[0,40]]));
   assert.throws(()=>polygonInfo([[0,0],[40,0],[40,40],[0,NaN]]));

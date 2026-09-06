@@ -1,7 +1,7 @@
 import {createWorld,createPreview} from './world.mjs';
 import {PLOT,plotTerrain,validCoordinate,riverX} from '../shared/terrain.mjs';
 import {createLandCheck} from '../shared/land-check.mjs';
-import {polygonInfo} from '../shared/polygon-land.mjs';
+import {polygonInfo,isConvex} from '../shared/polygon-land.mjs';
 let landDraft=null,checkedLand=null;
 const $=s=>document.querySelector(s),state={session:null,rows:[],planning:null,selected:null,mine:null,regionRequest:0,review:null,previewVersion:0};let toastTimer,preview;
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6000);}
@@ -10,10 +10,10 @@ function action(selector,fn){$(selector).addEventListener('click',async()=>{try{
 function text(tag,value,className){const el=document.createElement(tag);el.textContent=value;if(className)el.className=className;return el;}
 async function session(){state.session=await api('/api/session');const user=state.session.user;$('#account-name').textContent=user?'@'+user.login:'访客';$('#login').hidden=!!user;$('#logout').hidden=!user;$('#admin').hidden=!user?.admin;$('#demo-note').hidden=!state.session.demo||!!user;if(user){state.mine=await api('/api/mine');}else state.mine=null;renderSelected();}
 async function refreshRegion(){const token=++state.regionRequest,{x,z}=world.origin;if(state.regionKey!==x+','+z){state.regionKey=x+','+z;$('#coord-x').value=x;$('#coord-z').value=z;}try{const result=await api(`/api/world?x=${x}&z=${z}&radius=4`);if(token!==state.regionRequest)return;state.rows=result.plots;state.planning=result.planning;world.setRows(result.plots,result.planning);$('#world-status').textContent=`附近 ${result.plots.length} 块领地 · ${result.plots.filter(p=>p.published).length} 栋建筑`;if(landDraft)updateLand();else renderSelected();}catch(error){if(token===state.regionRequest){$('#world-status').textContent='同步失败 · 正在等待重试';toast(error.message);}}}
-const world=createWorld({onSelect(selection){state.selected=selection;renderSelected();},onRegion:refreshRegion,onError:toast,onLandPoint:addVertex});
-function addVertex(point){if(!landDraft)return;if(landDraft.length>=8)return toast('最多 8 个顶点，可撤销后重画');landDraft.push(point);updateLand();}
-function updateLand(){checkedLand=null;let message=`${landDraft.length}/8 个顶点 · 点击地面添加，至少 3 个顶点`;
-  if(landDraft.length>=3)try{const info=polygonInfo(landDraft);checkedLand=createLandCheck(state.planning,state.rows)(landDraft);message=`可领取 · ${landDraft.length} 边 · ${info.area.toFixed(0)} m² · ${info.width} × ${info.depth} m · 入口已连接道路`;}catch(error){message=error.message;}
+const world=createWorld({onSelect(selection){state.selected=selection;renderSelected();},onRegion:refreshRegion,onError:toast,onLandPoint:addVertex,onLandMove(index,point){if(!landDraft)return;const next=landDraft.map((p,i)=>i===index?point:p);if(!isConvex(next)||next.some((p,i)=>next.some((q,j)=>i!==j&&p[0]===q[0]&&p[1]===q[1])))return;landDraft=next;updateLand();}});
+function addVertex(point){if(!landDraft)return;if(landDraft.length>=8)return toast('最多 8 个顶点，可拖动调整或撤销');if(landDraft.some(p=>p[0]===point[0]&&p[1]===point[1])||!isConvex([...landDraft,point]))return toast('请沿外边界依次加点，轮廓必须保持凸多边形');landDraft.push(point);updateLand();}
+function updateLand(){checkedLand=null;let message=`${landDraft.length}/8 个顶点 · 点击添加，拖动顶点调整凸多边形`;
+  if(landDraft.length>=3)try{const info=polygonInfo(landDraft);checkedLand=createLandCheck(state.planning,state.rows)(landDraft);message=`可领取 · ${landDraft.length} 边 · ${info.area.toFixed(0)} m² · ${info.width} × ${info.depth} m${checkedLand.entrance?' · 入口已连接道路':''}`;}catch(error){message=error.message;}
   $('#land-status').textContent=message;$('#land-status').style.color=checkedLand?'#286d4d':'#a63835';world.setLandDraft(landDraft,checkedLand?'#348a61':'#d95b56',checkedLand?.elevation);$('#land-undo').disabled=!landDraft.length;renderSelected();
 }
 function cancelLand(){landDraft=null;checkedLand=null;world.setLandDrawing(false);world.setLandDraft([]);$('#land-editor').hidden=true;renderSelected();}
@@ -21,7 +21,7 @@ action('#land-undo',()=>{landDraft?.pop();if(landDraft)updateLand();});action('#
 action('#land-login',async()=>{if(state.session?.githubReady){location.href='/auth/github';return;}if(!state.session?.demo)return toast('站点管理员尚未配置 GitHub 登录');await api('/api/demo-login',{method:'POST'});await session();toast('已登录，可确认领取当前轮廓');});
 action('#land-add',()=>{const x=Number($('#vertex-x').value),z=Number($('#vertex-z').value);if(!$('#vertex-x').value||!$('#vertex-z').value||!Number.isFinite(x)||!Number.isFinite(z))return toast('请输入顶点世界坐标');addVertex([Math.round(x/2)*2,Math.round(z/2)*2]);});
 function renderSelected(){
-  if(landDraft){$('#land-login').hidden=!!state.session?.user;$('#plot-title').textContent='圈出你的领地';$('#plot-description').textContent='逐点画出 3～8 边形。绿色可领取，红色提示原因；地皮间保留 8 米公共通道。';$('#plot-owner').textContent='2 米网格 · 每条边至少 8 米 · 限高 24 米';$('#open-upload').hidden=true;$('#claim').disabled=!checkedLand||!!state.mine?.plot;$('#claim').textContent=state.mine?.plot?'你已拥有一块领地':checkedLand?'确认领取这片土地 ↗':'调整轮廓后领取';return;}
+  if(landDraft){$('#land-login').hidden=!!state.session?.user;$('#plot-title').textContent='圈出你的领地';$('#plot-description').textContent='逐点画出 3～8 边形。绿色可领取，红色提示原因；地皮边界之间至少相隔 2 米。';$('#plot-owner').textContent='2 米网格 · 每条边至少 8 米 · 限高 24 米';$('#open-upload').hidden=true;$('#claim').disabled=!checkedLand||!!state.mine?.plot;$('#claim').textContent=state.mine?.plot?'你已拥有一块领地':checkedLand?'确认领取这片土地 ↗':'调整轮廓后领取';return;}
   $('#land-login').hidden=true;
   const selected=state.selected,row=selected&&state.rows.find(r=>r.x===selected.x&&r.z===selected.z),own=row&&row.owner===state.session?.user?.id;
   const planned=selected&&state.planning?.lots.find(p=>p.x===selected.x&&p.z===selected.z),terrain=row?{...row,biome:'保留领地',relief:0,buildable:false}:planned||null;
@@ -37,7 +37,7 @@ function renderSelected(){
 }
 action('#start',()=>{if(state.mine?.plot)return showMine();if(!state.planning)return toast('请等待地图加载完成');landDraft=[];world.setLandDrawing(true);$('#land-editor').hidden=false;updateLand();toast('沿道路点击 3～8 个顶点圈地，WASD 平移，滚轮缩放；可撤销顶点');});
 action('#home',()=>world.focus(0,0));action('#reset-view',()=>world.focus(0,0));
-action('#walk',()=>{if(landDraft)cancelLand();world.setWalk(true);toast('点击画面控制视角；Esc 可释放鼠标。已发布建筑使用整体包围盒碰撞。');});action('#exit-walk',()=>world.setWalk(false));
+action('#walk',()=>{if(landDraft)cancelLand();world.setWalk(true);toast('点击画面控制视角；Esc 可释放鼠标。可走上低台阶和庭院，墙体会阻挡通行。');});action('#exit-walk',()=>world.setWalk(false));
 $('#coordinates').addEventListener('submit',e=>{e.preventDefault();const x=Number($('#coord-x').value),z=Number($('#coord-z').value);if(!validCoordinate(x)||!validCoordinate(z))return toast('请输入有效整数坐标');world.focus(x,z);});
 $('#login').addEventListener('click',e=>{if(!state.session?.githubReady){e.preventDefault();toast('GitHub 登录代码已就绪，站点管理员需先配置 OAuth App。当前可使用本地演示。');}});
 action('#demo-login',async()=>{await api('/api/demo-login',{method:'POST'});await session();toast('已进入本地演示账号，可体验领取与审核流程');});

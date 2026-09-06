@@ -4,6 +4,25 @@ import {createStore} from '../server/store.mjs';
 import {validateModel} from '../server/validate.mjs';
 import {Document,NodeIO} from '@gltf-transform/core';
 import {createApp} from '../server/app.mjs';
+import {createLandCheck} from '../shared/land-check.mjs';
+
+test('land without road frontage is buildable with a nullable entrance',()=>{
+  const store=createStore(':memory:');
+  try{
+    const plan={...store.planner.around(0,0),roads:[],legacy:[]};let polygon,land;
+    for(const lot of plan.lots){const x=Math.round(lot.cx/2)*2,z=Math.round(lot.cz/2)*2,p=[[x-16,z-16],[x+16,z-16],[x+16,z+16],[x-16,z+16]];try{land=createLandCheck(plan)(p);polygon=p;break;}catch{}}
+    assert.ok(land);assert.equal(land.entrance,null);assert.ok(Number.isFinite(land.elevation));
+    const neighbor=gap=>({polygon:polygon.map(([x,z])=>[x-32-gap,z])});
+    assert.ok(createLandCheck(plan,[neighbor(2)])(polygon).buildable);
+    for(const gap of [1,0,-2])assert.throws(()=>createLandCheck(plan,[neighbor(gap)])(polygon),/至少 2 米/);
+    assert.ok(createLandCheck({...plan,legacy:[neighbor(2)]})(polygon).buildable);
+    assert.throws(()=>createLandCheck({...plan,legacy:[neighbor(0)]})(polygon),/至少 2 米/);
+    const [x,z]=polygon[0];plan.roads=[{id:'distant',width:10,points:[[x-40,land.elevation,z-80],[x-40,land.elevation,z+80]]}];
+    assert.equal(createLandCheck(plan)(polygon).entrance,null);
+    plan.roads=[{id:'blocked',width:10,points:[[x+16,land.elevation,z-80],[x+16,land.elevation,z+80]]}];
+    assert.throws(()=>createLandCheck(plan)(polygon),/道路/);
+  }finally{store.close();}
+});
 test('polygon claims persist exact geometry and reject competing owners and legacy overlap',()=>{
   const store=createStore(':memory:');try{const plan=store.planner.around(0,0);let polygon;
     for(const lot of plan.lots){const x=Math.round(lot.cx/2)*2,z=Math.round(lot.cz/2)*2,p=[[x-32,z-24],[x-24,z-32],[x+24,z-32],[x+32,z-24],[x+32,z+24],[x+24,z+32],[x-24,z+32],[x-32,z+24]];try{store.checkLand(p);polygon=p;break;}catch{}}
