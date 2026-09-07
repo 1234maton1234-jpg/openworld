@@ -24,6 +24,8 @@ test('one shared world broadcasts verified identities, proximity and disconnects
   const connect=async cookie=>{const ws=new WebSocket(config.url.replace('http','ws')+'/realtime',{headers:{Origin:config.url,...(cookie?{Cookie:cookie}:{})}});clients.push(ws);const messages=[];ws.on('message',v=>messages.push(JSON.parse(v)));await new Promise((r,j)=>{ws.once('open',r);ws.once('error',j);});return {ws,messages};};
   const wait=async predicate=>{const end=Date.now()+4000;while(Date.now()<end){if(predicate())return;await new Promise(r=>setTimeout(r,25));}assert.fail('Presence update timed out');};
   try{
+    config.allowedOrigins=['https://world.example'];
+    const alias=new WebSocket(config.url.replace('http','ws')+'/realtime',{origin:'https://world.example'});clients.push(alias);const aliasMessages=[];alias.on('message',value=>aliasMessages.push(JSON.parse(value)));await new Promise((r,j)=>{alias.once('open',r);alias.once('error',j);});alias.send(JSON.stringify({type:'ping',id:42}));await wait(()=>aliasMessages.some(m=>m.type==='pong'&&m.id===42));assert.ok(aliasMessages.some(m=>m.type==='welcome'));alias.close();
     const auth=await testSession(store),a=await connect(auth.cookie),b=await connect();
     const send=(c,x,extra={})=>c.ws.send(JSON.stringify({type:'pose',pose:{x,y:4.3,z:48,yaw:0,active:true,...extra},name:'Imposter'}));
     send(a,0);send(b,3);await wait(()=>b.messages.some(m=>m.type==='snapshot'&&m.players.length===1));

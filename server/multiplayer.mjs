@@ -1,4 +1,5 @@
 import {WebSocketServer,WebSocket} from 'ws';
+import {allowedOrigin} from './origins.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {playerPose,PLAYER_RADIUS,PLAYER_LIMIT} from '../shared/player-state.mjs';
 import {createCarRides} from './car-rides.mjs';
@@ -21,7 +22,7 @@ export function installMultiplayer(server,store,config){
   function send(ws,value){if(ws.readyState!==WebSocket.OPEN)return;if(ws.bufferedAmount>131072){ws.terminate();return;}ws.send(JSON.stringify(value));}
   async function upgrade(req,socket,head){
     socket.on('error',()=>{});
-    if(closed||req.url!=='/realtime'||req.headers.origin!==config.url||peers.size+pending.size>=512){socket.destroy();return;}
+    if(closed||req.url!=='/realtime'||!allowedOrigin(config,req.headers.origin)||peers.size+pending.size>=512){const status=closed||peers.size+pending.size>=512?'503 Service Unavailable':'403 Forbidden';socket.end('HTTP/1.1 '+status+'\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');return;}
     const ip=req.socket.remoteAddress;
     pending.add(socket);socket.setTimeout(10000,()=>socket.destroy());
     try{
@@ -37,7 +38,7 @@ export function installMultiplayer(server,store,config){
         ws.on('message',(bytes,binary)=>{
           if(!peers.has(ws))return;const now=Date.now();if(now-peer.window>=1000){peer.window=now;peer.messages=0;}
           if(binary||++peer.messages>30){ws.close(1008,'Invalid presence traffic');return;}
-          try{const message=JSON.parse(bytes);if(message.type==='ride-enter'){try{send(ws,{type:'ride',ride:rides.enter(peer,message.owner)});}catch(error){send(ws,{type:'ride-error',error:error.message});}return;}if(message.type==='ride-exit'){const position=rides.leave(peer);if(position)send(ws,{type:'ride-end',position});return;}if(message.type!=='pose')return;const pose=playerPose(message.pose);if(!pose){ws.close(1008,'Invalid pose');return;}if(peer.ride){peer.updated=now;return;}const oldCar=peer.pose?.personalCar;if(pose.personalCar&&oldCar)peer.carSpeed=Math.hypot(pose.personalCar.x-oldCar.x,pose.personalCar.z-oldCar.z)/Math.max(.01,(now-peer.updated)/1000);else peer.carSpeed=0;if(pose.personalCar&&!peer.pose?.personalCar&&peer.hash&&!peer.checking&&now-(peer.vehicleChecked||0)>5000){peer.vehicleChecked=now;peer.checking=true;identity(peer.hash).then(user=>{if(user){peer.vehicle=user.vehicle||null;peer.seats=vehicleSeats(user);}else ws.close(4003,'Session expired');}).catch(()=>{}).finally(()=>{peer.checking=false;});}peer.pose=pose;peer.updated=now;if(pose.active){peer.lastPosition=pose;peer.dirty=true;}}catch{ws.close(1008,'Invalid JSON');}
+          try{const message=JSON.parse(bytes);if(message.type==='ping'){if(Number.isSafeInteger(message.id)&&message.id>=0)send(ws,{type:'pong',id:message.id});return;}if(message.type==='ride-enter'){try{send(ws,{type:'ride',ride:rides.enter(peer,message.owner)});}catch(error){send(ws,{type:'ride-error',error:error.message});}return;}if(message.type==='ride-exit'){const position=rides.leave(peer);if(position)send(ws,{type:'ride-end',position});return;}if(message.type!=='pose')return;const pose=playerPose(message.pose);if(!pose){ws.close(1008,'Invalid pose');return;}if(peer.ride){peer.updated=now;return;}const oldCar=peer.pose?.personalCar;if(pose.personalCar&&oldCar)peer.carSpeed=Math.hypot(pose.personalCar.x-oldCar.x,pose.personalCar.z-oldCar.z)/Math.max(.01,(now-peer.updated)/1000);else peer.carSpeed=0;if(pose.personalCar&&!peer.pose?.personalCar&&peer.hash&&!peer.checking&&now-(peer.vehicleChecked||0)>5000){peer.vehicleChecked=now;peer.checking=true;identity(peer.hash).then(user=>{if(user){peer.vehicle=user.vehicle||null;peer.seats=vehicleSeats(user);}else ws.close(4003,'Session expired');}).catch(()=>{}).finally(()=>{peer.checking=false;});}peer.pose=pose;peer.updated=now;if(pose.active){peer.lastPosition=pose;peer.dirty=true;}}catch{ws.close(1008,'Invalid JSON');}
         });
       });
     }catch{socket.destroy();}finally{pending.delete(socket);}

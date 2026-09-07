@@ -1,4 +1,5 @@
 import express from 'express';
+import {allowedOrigin,normalizeOrigins} from './origins.mjs';
 import {installTeleports} from './teleports.mjs';
 import {mkdirSync,writeFileSync,unlinkSync} from 'node:fs';
 import {resolve,join} from 'node:path';
@@ -14,12 +15,13 @@ export async function createApp(config){
   if(config.production&&(!config.url.startsWith('https:')||!config.clientId||!config.clientSecret||!config.adminIds.length))throw new Error('Production requires HTTPS, GitHub OAuth and administrator IDs.');
   if(config.production&&!/^postgres(?:ql)?:\/\//.test(config.databaseUrl||''))throw new Error('Production requires a PostgreSQL DATABASE_URL.');
   config.url=new URL(config.url).origin;
+  config.allowedOrigins=normalizeOrigins(config.allowedOrigins,config.production);
   const data=resolve(config.dataDir),uploads=join(data,'uploads');mkdirSync(uploads,{recursive:true});
   const store=(await createStore(config.databaseUrl||join(data,'town.sqlite'))),app=express();app.disable('x-powered-by');
   app.use((req,res,next)=>{
     res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
     if(req.path.startsWith('/api')||req.path.startsWith('/auth')||req.path.startsWith('/assets'))res.set('Cache-Control','no-store');
-    if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.headers.origin!==config.url)fail(403,'请求来源不匹配，请使用网站正式地址');
+    if(!['GET','HEAD','OPTIONS'].includes(req.method)&&!allowedOrigin(config,req.headers.origin))fail(403,'请求来源不匹配，请使用网站正式地址');
     next();
   });
   app.use(express.json({limit:'16kb'}));

@@ -25,6 +25,7 @@ export async function installAuth(app,store,config){
   });
   app.post('/api/logout',requireUser,async (req,res)=>{(await db.prepare('DELETE FROM sessions WHERE hash=?').run(hash(cookie(req,'town_session'))));res.clearCookie('town_session',cookieOptions);res.json({ok:true});});
   app.get('/auth/github',async (req,res)=>{
+    if((config.allowedOrigins||[]).some(origin=>new URL(origin).host===req.headers.host)&&req.headers.host!==new URL(config.url).host){const query=new URLSearchParams();if(req.query.returnTo==='admin')query.set('returnTo','admin');if(/^[A-F0-9]{12}$/.test(String(req.query.cli||'')))query.set('cli',req.query.cli);return res.redirect(config.url+'/auth/github'+(query.size?'?'+query:''));}
     if(!config.clientId||!config.clientSecret)return res.redirect('/game?auth=not-configured');
     (await store.rate('oauth:'+req.socket.remoteAddress,20));
     const state=random(),verifier=random();(await db.prepare('DELETE FROM oauth WHERE expires<?').run(Date.now()));(await db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now()));(await db.prepare('INSERT INTO oauth VALUES (?,?,?)').run(hash(state),verifier,Date.now()+600000));

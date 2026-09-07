@@ -1,0 +1,2 @@
+export function allowedOrigin(config,origin){return typeof origin==='string'&&(origin===config.url||(config.allowedOrigins||[]).includes(origin));}
+export function normalizeOrigins(origins,production=false){return (origins||[]).map(value=>{const url=new URL(value);if(!['https:','http:'].includes(url.protocol)||production&&url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('ALLOWED_ORIGINS must contain explicit website origins');return url.origin;});}

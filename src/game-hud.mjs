@@ -9,10 +9,11 @@ export function createGameHud({world,account,onLand,onAccount,onCloseLand,onView
   const actions=document.createElement('div');actions.className='profile-actions';actions.append(...account.children);account.append(heading,details,actions);
   document.addEventListener('pointerdown',event=>{if(!account.hidden&&!account.contains(event.target)&&!profile.contains(event.target))account.hidden=true;});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!account.hidden){account.hidden=true;profile.focus();}});
-  const ping=document.createElement('div');ping.id='network-latency';ping.title='到游戏服务器的 HTTP 往返延迟';ping.textContent='· -- ms';nav.append(ping);
-  let measuring=false;
-  async function measure(){if(document.hidden||measuring)return;measuring=true;const start=performance.now();try{const response=await fetch('/health',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)throw Error();await response.text();const ms=Math.round(performance.now()-start);ping.textContent='▂▄▆ '+ms+' ms';ping.dataset.quality=ms<120?'good':ms<300?'slow':'poor';}catch{ping.textContent='· 离线';ping.dataset.quality='poor';}finally{measuring=false;}}
-  measure();setInterval(measure,10000);document.addEventListener('visibilitychange',measure);
+  const ping=document.createElement('div');ping.id='network-latency';nav.append(ping);
+  const reason=document.createElement('div');reason.id='network-reason';reason.setAttribute('role','status');nav.append(reason);
+  const canvas=document.querySelector('#world');
+  function network(){const data=canvas.dataset,online=data.multiplayer==='online',ms=data.networkRtt===''||data.networkRtt===undefined?null:Number(data.networkRtt);ping.textContent=online?(ms===null?'· 测量中':'▂▄▆ '+ms+' ms'):data.multiplayer==='connecting'?'· 连接中':'· 离线';ping.title='游戏 WebSocket 往返延迟，每 5 秒测量';ping.dataset.quality=!online?'poor':ms===null?'slow':ms<120?'good':ms<300?'slow':'poor';reason.textContent=online?'':data.networkReason||'';reason.hidden=!reason.textContent;}
+  new MutationObserver(network).observe(canvas,{attributes:true,attributeFilter:['data-multiplayer','data-network-rtt','data-network-reason']});network();
   function sync(){const overview=document.body.dataset.walk!=='true',label=overview?'返回第一人称':'上帝视角';view.title=label;view.setAttribute('aria-label',label);view.setAttribute('aria-pressed',String(overview));view.querySelector('span').textContent=label;profile.setAttribute('aria-expanded',String(!account.hidden));}
   new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-walk']});new MutationObserver(sync).observe(account,{attributes:true,attributeFilter:['hidden']});sync();
   const close=document.createElement('button');close.id='close-plot-panel';close.type='button';close.textContent='×';close.title='关闭领地面板';close.setAttribute('aria-label','关闭领地面板');close.onclick=onCloseLand;document.querySelector('.plot-panel').prepend(close);
