@@ -16,7 +16,7 @@ export async function installCliApi(app,store,uploads){
   app.get('/api/vehicle',async(req,res)=>{const row=req.user&&await db.prepare('SELECT id FROM vehicles WHERE owner=?').get(req.user.id);res.json({id:row?.id||null,url:row?'/api/vehicle/'+row.id+'.glb':null,category:'car'});});
   app.get('/api/vehicle/:id.glb',async(req,res)=>{if(!await db.prepare('SELECT 1 FROM vehicles WHERE id=?').get(req.params.id))fail(404,'载具模型不存在');res.type('model/gltf-binary').sendFile(join(uploads,req.params.id+'.glb'));});
   app.put('/api/vehicle',...upload,async(req,res)=>{req.validating=true;try{
-    const metrics=await validateModel(req.body,{width:1.9,depth:4.1});if(metrics.size[1]<.5||metrics.size[1]>2)fail(400,'小汽车模型高度须为 0.5～2 米，宽不超过 1.9 米，长不超过 4.1 米');
+    const metrics=await validateModel(req.body,{width:1.9,depth:4.1},{vehicle:true});if(metrics.size[1]<.5||metrics.size[1]>2)fail(400,'小汽车模型高度须为 0.5～2 米，宽不超过 1.9 米，长不超过 4.1 米');
     const id=randomUUID();let old;writeFileSync(join(uploads,id+'.glb'),req.body,{flag:'wx'});
     try{await store.transaction(async()=>{old=await db.prepare('SELECT id FROM vehicles WHERE owner=?').get(req.user.id);await db.prepare('INSERT INTO vehicles VALUES (?,?,?) ON CONFLICT(owner) DO UPDATE SET id=excluded.id,metrics=excluded.metrics').run(req.user.id,id,JSON.stringify(metrics));});}catch(error){unlinkSync(join(uploads,id+'.glb'));throw error;}
     if(old)try{unlinkSync(join(uploads,old.id+'.glb'));}catch{}res.json({id,url:'/api/vehicle/'+id+'.glb',category:'car',metrics});

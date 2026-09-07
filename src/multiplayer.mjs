@@ -15,19 +15,22 @@ function nameTag(name){
   const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;
   const sprite=new T.Sprite(new T.SpriteMaterial({map:texture,transparent:true,depthWrite:false,depthTest:true,toneMapped:false,sizeAttenuation:false}));sprite.scale.set(.22,.04125,1);return sprite;
 }
-export function createMultiplayer(scene,{origin,onError,onRestore,onDisconnect}){
+export function createMultiplayer(scene,{origin,onError,onRestore,onDisconnect,onRideEnd,onRideStart}){
   const peers=new Map(),loader=new GLTFLoader();let socket,retry,timer,stopped=false,delay=1000,lastPose=null,lastUpdate=0,loading=0,identity,connection=0;
+  let ride=null,ridePending=0;
+  function endRide(position=ride?.pose){ride=null;ridePending=0;if(position)onRideEnd?.(position);}
   let welcomed=false,restoredIdentity,guestPose=null,lastGuestSave=0;
   const guestKey=`openworld:guest-position:${TERRAIN.seed}:${TERRAIN.version}`;
   function saveGuest(){if(identity!==null||!guestPose)return;try{localStorage.setItem(guestKey,JSON.stringify(guestPose));}catch{}}
   const status=value=>{document.querySelector('#world').dataset.multiplayer=value;};
   function remove(id){const p=peers.get(id);if(!p)return;peers.delete(id);const custom=p.avatar.setModel(null);if(custom)release(custom);release(p.avatar.root);release(p.label);if(p.vehicle)release(p.vehicle.group);if(p.car)releaseCar(p.car.group);}
-  function clear(){for(const id of peers.keys())remove(id);}
+  function clear(){endRide();for(const id of peers.keys())remove(id);}
   function connect(){
     if(stopped||identity===undefined)return;welcomed=false;const current=++connection;status('connecting');socket=new WebSocket(location.origin.replace(/^http/,'ws')+'/realtime');const ws=socket;
     ws.onopen=()=>{if(current!==connection)return;delay=1000;status('online');};
     ws.onmessage=event=>{
       if(current!==connection)return;let message;try{message=JSON.parse(event.data);}catch{return;}
+      if(message.type==='ride'){const starting=!ride;ride=message.ride;if(starting)onRideStart?.(ride);ridePending=0;return;}if(message.type==='ride-end'){endRide(message.position);return;}if(message.type==='ride-error'){ridePending=0;onError(message.error);return;}
       if(message.type==='welcome'){
         if(message.userId!==identity){onError('登录状态已变化，请刷新页面');ws.close();return;}
         if(restoredIdentity!==identity){let position=message.position;if(identity===null)try{position=JSON.parse(localStorage.getItem(guestKey));}catch{}const valid=playerPose(position);lastPose=null;guestPose=null;restoredIdentity=identity;if(valid?.active)onRestore?.(valid);}
@@ -75,7 +78,7 @@ export function createMultiplayer(scene,{origin,onError,onRestore,onDisconnect})
   function start(){stopped=false;connect();timer=setInterval(send,100);}
   window.addEventListener('pagehide',stop);window.addEventListener('pageshow',()=>{if(stopped)start();});start();
   document.addEventListener('visibilitychange',()=>{if(document.hidden){send();saveGuest();}});
-  return {setIdentity(value){if(identity===value)return;send();saveGuest();onDisconnect?.();identity=value;restoredIdentity=undefined;lastPose=null;guestPose=null;connection++;clearTimeout(retry);socket?.close();clear();connect();},
+  return {get ready(){return welcomed;},get ride(){return ride;},enterRide(owner){if(ride||(ridePending&&performance.now()-ridePending<1000))return;if(!welcomed||socket?.readyState!==WebSocket.OPEN)return onError('请等待连接恢复');ridePending=performance.now();socket.send(JSON.stringify({type:'ride-enter',owner}));},exitRide(){if(ride&&socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ride-exit'}));},rideTargets(){return Array.from(peers,([id,p])=>p.car&&p.target.personalCar&&(p.target.carSeats?.length??2)>1?{root:p.car.group,node:p.car.group,position:[0,.65,0],yaw:0,rideOwner:id}:null).filter(Boolean);},setIdentity(value){if(identity===value)return;send();saveGuest();onDisconnect?.();identity=value;restoredIdentity=undefined;lastPose=null;guestPose=null;connection++;clearTimeout(retry);socket?.close();clear();connect();},
     update(pose,dt){lastPose=pose;lastUpdate=performance.now();if(welcomed&&identity===null&&pose.active){guestPose=pose;if(lastUpdate-lastGuestSave>2000){lastGuestSave=lastUpdate;saveGuest();}}const o=origin();let index=0;
       for(const [id,p] of peers){
         if(index++<8)loadModel(id,p);
@@ -86,5 +89,5 @@ export function createMultiplayer(scene,{origin,onError,onRestore,onDisconnect})
         if(p.vehicle?.type!==remoteType){if(p.vehicle)release(p.vehicle.group);p.vehicle=remoteType?{...createVehicleModel(remoteType),type:remoteType}:null;if(p.vehicle){p.vehicle.group.traverse(o=>{o.castShadow=false;});scene.add(p.vehicle.group);}}
         if(p.vehicle){const v=p.vehicle,offset=s.vehicleType==='bike'?.35:0;v.group.position.set(position.x-Math.sin(s.yaw)*offset,position.y-(s.vehicleType==='bike'?.24:-.2),position.z-Math.cos(s.yaw)*offset);v.group.rotation.y=s.yaw;for(const w of v.wheels)w.spin.rotation.x=-s.crankPhase/(1.4*w.radius);v.pedals.forEach((part,i)=>{const phase=s.crankPhase+i*Math.PI;part.position.y=.5+.17*Math.sin(phase);part.position.z=.05+.17*Math.cos(phase);});}
       }
-    },dispose:stop};
+    },get mapPlayers(){return Array.from(peers,([id,p])=>({id,name:p.name,x:p.pose.x,z:p.pose.z,active:p.pose.active})).filter(p=>p.active&&Number.isFinite(p.x)&&Number.isFinite(p.z));},dispose:stop};
 }

@@ -7,7 +7,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 test('expanded lots cover 64 metres with a six metre gap',()=>{
-  assert.equal(RULES.width,64);assert.equal(RULES.depth,64);assert.equal(RULES.height,24);
+  assert.equal(RULES.width,64);assert.equal(RULES.depth,64);assert.equal(RULES.height,600);
   assert.equal(TERRAIN.cell,70);assert.equal(RULES.cell-RULES.width,6);
   const lot=plotTerrain(-2,0);assert.ok(lot.buildable);
   for(let x=-32;x<=32;x+=2)for(let z=-32;z<=32;z+=2)assert.ok(lot.elevation>=heightAt(-140+x,z));

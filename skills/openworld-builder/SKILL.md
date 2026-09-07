@@ -29,13 +29,15 @@ Token login remains an explicit fallback with `login --token` using `OPENWORLD_G
 
 ## Build
 
-For a personal vehicle, read the vehicle contract in [references/model-rules.md](references/model-rules.md#vehicles). No plot is needed: vehicles use the small-car class and `vehicle set FILE.glb`. Do not use the building submission flow or avatar rigging requirements for cars.
+For a personal vehicle, read the vehicle contract in [references/model-rules.md](references/model-rules.md#vehicles), including the 1/2/4-seat layout. Model real space for the declared occupants, export seat coordinates and inspect headroom, legroom, cockpit visibility and entry/exit. No plot is needed: vehicles use the small-car class and `vehicle set FILE.glb`. Do not use the building submission flow or avatar rigging requirements for cars.
 
 For character creation, rigging is mandatory: deliver a genuinely skinned humanoid model with usable joint weights, and verify idle, walking/running, sitting and cycling movement against the default character’s behavior. Static geometry, named body groups or an unweighted armature do not satisfy this requirement. Read the avatar section for the supported animation contract. Do not silently downgrade a requested character to a static upload to bypass validation.
 
 For a building, obtain the current owned plot first. If none exists, ask the player to claim a plot in the game; never guess a boundary. Read [references/model-rules.md](references/model-rules.md) before modeling or export. Prefer live server numeric limits; the reference supplies format and placement constraints that the rules response does not describe.
 
 Design to the user's requested style and function. Fit the complete model, foundation, roof overhangs, stairs and decoration inside the polygon after the server's bounding-box centering. Do not generate a default rectangular foundation for a polygon plot or add a public connecting road. Avoid inaccessible entrances and excessive hidden interior geometry. Model appearance alone does not implement interactions or animation; do not claim otherwise.
+
+When a building includes usable chairs, benches or sofas, follow [seat compatibility](references/model-rules.md#seat-compatibility): export one seat marker per sitting place with the supported GLB extras, and verify the F-key prompt, seated pose and standing up. Explicitly decorative seating may omit interaction; do not claim it is usable.
 
 Use the available modeling tool, export a self-contained GLB and inspect it visually from several angles. Check dimensions, transformed bounds, polygon containment, resource counts, normals and embedded textures. Keep the editable source and final artifact. If no local validator is available, state which checks remain unverified; upload performs authoritative validation.
 

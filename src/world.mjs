@@ -15,6 +15,7 @@ import {createAvatar,chasePosition} from './avatar.mjs';
 import {walkFacing} from './walk-facing.mjs';
 let avatarYaw=0,walkMoved=false;
 import {createCockpit} from './cockpit.mjs';
+import {carSeatPose,carSeats} from '../shared/car-seats.mjs';
 import {createMultiplayer} from './multiplayer.mjs';
 import {prepareCarModel,releaseCar} from './custom-car.mjs';
 
@@ -57,7 +58,7 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
     updateOutline();sun.shadow.needsUpdate=true;renderer.shadowMap.needsUpdate=true;
   }
   function place(object,row,metrics){object.position.set((row.cx-origin.x*PLOT.cell)-(metrics.min[0]+metrics.max[0])/2,row.elevation-metrics.min[1],(row.cz-origin.z*PLOT.cell)-(metrics.min[2]+metrics.max[2])/2);object.updateMatrixWorld(true);}
-  function moveOrigin(x,z,reset){
+  function moveOrigin(x,z,reset,notify=true){
     x=Math.max(-MAX_COORDINATE,Math.min(MAX_COORDINATE,x));z=Math.max(-MAX_COORDINATE,Math.min(MAX_COORDINATE,z));
     const dx=(x-origin.x)*PLOT.cell,dz=(z-origin.z)*PLOT.cell;origin={x,z};
     atmosphere.setWorldOrigin(x*PLOT.cell,z*PLOT.cell);
@@ -66,7 +67,7 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
     if(reset){focusElevation=true;const h=heightAt(x*PLOT.cell,z*PLOT.cell);camera.position.set(130,h+150,170);controls.target.set(0,h,0);controls.update();}
     for(const {object,row,metrics} of loaded.values())place(object,row,metrics);
     if(town)town.position.set(-x*PLOT.cell,town.position.y,-z*PLOT.cell);
-    renderGrid();onRegion({...origin});
+    renderGrid();if(notify)onRegion({...origin});
   }
   function refreshBuildings(){
     desired=new Map(rows.filter(r=>r.published).sort((a,b)=>Math.hypot(a.x-origin.x,a.z-origin.z)-Math.hypot(b.x-origin.x,b.z-origin.z)).slice(0,16).map(r=>[r.published,r]));
@@ -87,13 +88,18 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
   const mouseLook=createMouseLook(look);
   const avatar=createAvatar(scene),cockpit=createCockpit(),viewCamera=camera.clone(),viewRay=new THREE.Raycaster();let thirdPerson=false;
   let savedSpawn=null;
-  const multiplayer=createMultiplayer(scene,{origin:()=>origin,onError,onDisconnect:recallPersonal,onRestore(position){savedSpawn=position;if(walking)setWalk(true,{lockPointer:false});}});
+  const multiplayer=createMultiplayer(scene,{origin:()=>origin,onError,onDisconnect:recallPersonal,onRideStart(ride){boardingPosition={x:origin.x*70+camera.position.x,y:camera.position.y,z:origin.z*70+camera.position.z};recallPersonal();keys.clear();velocity=0;yaw=ride.pose.yaw;pitch=-.08;camera.rotation.set(pitch,yaw,0);lastRideYaw=yaw;},onRideEnd:leavePassenger,onRestore(position){savedSpawn=position;if(walking)setWalk(true,{lockPointer:false});}});
   let carRequest=0,carLoading=false,carModelId=null,lastCarSync=0;
+  let lastRideYaw=0,boardingPosition=null;
+  function passengerExit(position){
+    for(const radius of [1.8,2.5,4,6])for(let i=0;i<8;i++){const angle=position.yaw+i*Math.PI/4,x=position.x+Math.cos(angle)*radius-origin.x*70,z=position.z+Math.sin(angle)*radius-origin.z*70,y=floorAt(x,z)+1.7;if(Math.abs(y-1.7-position.y)<3&&!blocked(x,z,y))return {x,y,z};}return null;
+  }
+  function leavePassenger(position){const exit=passengerExit(position);if(exit)camera.position.set(exit.x,exit.y,exit.z);else if(boardingPosition)camera.position.set(boardingPosition.x-origin.x*70,boardingPosition.y,boardingPosition.z-origin.z*70);else camera.position.set(position.x-origin.x*70,floorAt(position.x-origin.x*70,position.z-origin.z*70)+1.7,position.z-origin.z*70);boardingPosition=null;keys.clear();velocity=0;mouseLook.reset();}
   function recallPersonal(){carRequest++;carLoading=false;const v=vehicles.personal;if(!v)return;const driving=vehicles.active===v;vehicles.recall();if(driving){camera.position.set(v.x-origin.x*70,v.y+1.7,v.z-origin.z*70);yaw=v.heading;pitch=-.08;camera.rotation.set(pitch,yaw,0);velocity=0;keys.clear();mouseLook.reset();}canvas.dataset.personalCar='false';}
   async function personalModel(){const response=await fetch('/api/vehicle');if(!response.ok)throw new Error('无法读取载具模型');const row=await response.json();return {id:row.id,model:row.url?prepareCarModel((await loader.loadAsync(row.url)).scene):null};}
   async function togglePersonal(){
     if(vehicles.personal){recallPersonal();onError('个人小汽车已收回');return;}
-    if(carLoading)return;if(canvas.dataset.multiplayer!=='online'){onError('连接服务器后才能召唤载具');return;}
+    if(multiplayer.ride)return onError('请先下车');if(carLoading)return;if(canvas.dataset.multiplayer!=='online'){onError('连接服务器后才能召唤载具');return;}
     if(vehicles.active){onError('请先下车再召唤个人载具');return;}
     carLoading=true;const request=++carRequest;
     try{const {id,model}=await personalModel();if(request!==carRequest||!walking){if(model)releaseCar(model.group);return;}const ok=vehicles.summon(origin.x*70+camera.position.x,origin.z*70+camera.position.z,yaw,model);if(!ok){if(model)releaseCar(model.group);onError('附近没有足够的安全空间，请移到空地或道路上');return;}carModelId=id;canvas.dataset.personalCar='true';onError('个人小汽车已召唤 · F 驾驶 · P 收回');}
@@ -108,13 +114,14 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
     const now=performance.now();if(now-lastAvatarSync>15000){lastAvatarSync=now;void syncAvatar();}
     if(now-lastCarSync>15000){lastCarSync=now;void syncPersonalCar();}
     cockpit.update(vehicles.active,walking&&!thirdPerson,keys,paused,dt,walking);
-    const v=vehicles.active,position=camera.position.clone();
+    const ride=multiplayer.ride,v=vehicles.active,position=camera.position.clone();
     if(v){const offset=v.type==='bike'?.35:0;position.set(v.group.position.x+Math.sin(v.heading)*offset,v.y+(v.type==='bike'?.24:-.2),v.group.position.z+Math.cos(v.heading)*offset);}else position.y-=seated?1.85:1.7;
-    avatar.update({position,running:keys.has('ShiftLeft')||keys.has('ShiftRight'),yaw:v?v.heading:seated?yaw:avatarYaw,visible:walking&&(thirdPerson||v?.type==='bike'),firstPerson:walking&&!thirdPerson&&v?.type==='bike',moving:walking&&!paused&&!seated&&!v&&walkMoved,seated:!!seated||!!v,vehicleType:v?.type,crankPhase:v?.crankPhase||0,dt});
-    multiplayer.update({x:origin.x*70+position.x,y:position.y,z:origin.z*70+position.z,yaw:v?v.heading:seated?yaw:avatarYaw,active:walking,moving:walking&&!paused&&!seated&&!v&&walkMoved,running:keys.has('ShiftLeft')||keys.has('ShiftRight'),seated:!!seated||!!v,vehicleType:v?.type||null,crankPhase:v?.crankPhase||0,personalCar:vehicles.personal?{x:vehicles.personal.x,y:vehicles.personal.y,z:vehicles.personal.z,yaw:vehicles.personal.heading,phase:vehicles.personal.crankPhase,steer:vehicles.personal.steerAngle||0,driving:v===vehicles.personal}:null},dt);
+    if(v?.type==='car'&&v===vehicles.personal){const p=carSeatPose({x:v.x,y:v.y,z:v.z,yaw:v.heading},(v.seats||carSeats())[0]);position.set(p.x-origin.x*70,p.y,p.z-origin.z*70);}if(ride)position.set(ride.pose.x-origin.x*70,ride.pose.y,ride.pose.z-origin.z*70);
+    avatar.update({position,running:keys.has('ShiftLeft')||keys.has('ShiftRight'),yaw:ride?ride.pose.yaw:v?v.heading:seated?yaw:avatarYaw,visible:walking&&(thirdPerson||v?.type==='bike'),firstPerson:walking&&!thirdPerson&&v?.type==='bike',moving:walking&&!paused&&!ride&&!seated&&!v&&walkMoved,seated:!!ride||!!seated||!!v,vehicleType:v?.type,crankPhase:v?.crankPhase||0,dt});
+    multiplayer.update({x:origin.x*70+position.x,y:position.y,z:origin.z*70+position.z,yaw:ride?ride.pose.yaw:v?v.heading:seated?yaw:avatarYaw,active:walking,moving:walking&&!paused&&!ride&&!seated&&!v&&walkMoved,running:keys.has('ShiftLeft')||keys.has('ShiftRight'),seated:!!ride||!!seated||!!v,vehicleType:v?.type||null,crankPhase:v?.crankPhase||0,personalCar:vehicles.personal?{x:vehicles.personal.x,y:vehicles.personal.y,z:vehicles.personal.z,yaw:vehicles.personal.heading,phase:vehicles.personal.crankPhase,steer:vehicles.personal.steerAngle||0,driving:v===vehicles.personal}:null},dt);
     if(!walking)return camera;
     viewCamera.copy(camera);viewCamera.aspect=camera.aspect;viewCamera.updateProjectionMatrix();
-    if(v&&!thirdPerson){viewCamera.position.set(v.group.position.x+(v.type==='bike'?Math.sin(v.heading)*.1:0),v.y+(v.type==='bike'?1.8:1.25),v.group.position.z+(v.type==='bike'?Math.cos(v.heading)*.1:0));viewCamera.rotation.copy(camera.rotation);}
+    if(v&&!thirdPerson){viewCamera.position.set(v.group.position.x+(v.type==='bike'?Math.sin(v.heading)*.1:0),v.y+(v.type==='bike'?1.8:1.25),v.group.position.z+(v.type==='bike'?Math.cos(v.heading)*.1:0));if(v.type==='car'&&v===vehicles.personal)viewCamera.position.copy(position).add(new THREE.Vector3(0,1.62,0));viewCamera.rotation.copy(camera.rotation);}
     else if(thirdPerson&&!v){const target=camera.position.clone(),desired=chasePosition(target,camera.getWorldDirection(new THREE.Vector3())),delta=desired.clone().sub(target);viewRay.set(target,delta.clone().normalize());viewRay.far=delta.length();const hit=viewRay.intersectObjects(models.children,true)[0];if(hit)desired.copy(target).addScaledVector(viewRay.ray.direction,Math.max(.1,hit.distance-.25));desired.y=Math.max(desired.y,terrain.surface(origin.x*70+desired.x,origin.z*70+desired.z)+.3);viewCamera.position.copy(desired);viewCamera.lookAt(target.clone().addScaledVector(camera.getWorldDirection(new THREE.Vector3()),1).add(new THREE.Vector3(0,-.5,0)));}
     return viewCamera;
   }
@@ -125,21 +132,24 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
   const interactionRay=new THREE.Raycaster();
   function standUp(){if(!seated)return;if(walking&&standPosition)camera.position.set(standPosition.x-origin.x*70,standPosition.y,standPosition.z-origin.z*70);seated=null;standPosition=null;velocity=0;keys.clear();interactionTarget=null;}
   function updateInteraction(now){
+    if(multiplayer.ride){interactionHint.textContent='F · 下车';interactionHint.hidden=!walking||paused;return;}
     if(vehicles.active){interactionHint.hidden=true;return;}
     if(seated&&(!walking||!seated.root.parent))standUp();
     if(seated){camera.position.copy(seatPosition(seated)).add(new THREE.Vector3(0,.95,0));interactionHint.textContent='F · 起身';interactionHint.hidden=!walking||paused;return;}
     if(!walking||paused){interactionHint.hidden=true;interactionTarget=null;return;}
     if(now-lastInteraction<100)return;lastInteraction=now;
     const direction=camera.getWorldDirection(new THREE.Vector3());
-    interactionTarget=findInteraction([...loaded.values()].flatMap(v=>v.interactions).concat(vehicles.targets()),camera.position,direction,(target,distance)=>{interactionRay.set(camera.position,target.clone().sub(camera.position).normalize());interactionRay.far=Math.max(0,distance-.65);return !interactionRay.intersectObjects(models.children,true).length;});
-    interactionHint.hidden=!interactionTarget;interactionHint.textContent=interactionTarget?.vehicle?`F · 驾驶${VEHICLES[interactionTarget.vehicle.type].name}`:'F · 坐下';
+    interactionTarget=findInteraction([...loaded.values()].flatMap(v=>v.interactions).concat(vehicles.targets(),multiplayer.rideTargets()),camera.position,direction,(target,distance)=>{interactionRay.set(camera.position,target.clone().sub(camera.position).normalize());interactionRay.far=Math.max(0,distance-.65);return !interactionRay.intersectObjects(models.children,true).length;});
+    interactionHint.hidden=!interactionTarget;interactionHint.textContent=interactionTarget?.rideOwner?'F · 乘坐':interactionTarget?.vehicle?`F · 驾驶${VEHICLES[interactionTarget.vehicle.type].name}`:'F · 坐下';
   }
   document.addEventListener('keydown',e=>{
     if(!walking||paused||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.target.isContentEditable||document.querySelector('dialog[open]'))return;
-    if((seated||vehicles.active)&&e.code==='Space'){if(vehicles.active)keys.add('Space');e.preventDefault();e.stopImmediatePropagation();return;}
+    if((seated||vehicles.active||multiplayer.ride)&&e.code==='Space'){if(vehicles.active)keys.add('Space');e.preventDefault();e.stopImmediatePropagation();return;}
     if(e.code!=='KeyF'||e.repeat)return;e.preventDefault();
+    if(multiplayer.ride){if(!passengerExit(multiplayer.ride.pose)){onError('附近没有安全下车位置，请稍后再试');return;}multiplayer.exitRide();return;}
     if(vehicles.active){const exit=vehicles.exit();if(!exit){onError('周围没有安全下车位置，请把车移到空地');return;}camera.position.set(exit.x-origin.x*70,exit.y,exit.z-origin.z*70);yaw=exit.heading;pitch=-.08;camera.rotation.set(pitch,yaw,0);velocity=0;keys.clear();mouseLook.reset();interactionTarget=null;return;}
     if(seated){standUp();return;}lastInteraction=0;updateInteraction(performance.now());if(!interactionTarget)return;
+    if(interactionTarget.rideOwner){multiplayer.enterRide(interactionTarget.rideOwner);return;}
     if(interactionTarget.vehicle){vehicles.enter(interactionTarget.vehicle);keys.clear();velocity=0;mouseLook.reset();return;}
     standPosition={x:origin.x*70+camera.position.x,y:camera.position.y,z:origin.z*70+camera.position.z};seated=interactionTarget;velocity=0;keys.clear();
     const forward=new THREE.Vector3(-Math.sin(seated.yaw),0,-Math.cos(seated.yaw)).transformDirection(seated.node.matrixWorld);yaw=Math.atan2(-forward.x,-forward.z);pitch=-.08;camera.rotation.set(pitch,yaw,0);updateInteraction(performance.now());
@@ -173,7 +183,29 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
   document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.target.isContentEditable||document.querySelector('dialog[open]'))return;if(!walking&&['Space','Escape'].includes(e.code))return;if(e.code==='Escape'){paused=true;keys.clear();document.exitPointerLock?.();}if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','Space'].includes(e.code)){e.preventDefault();if(walking&&e.code==='Space'&&!e.repeat&&camera.position.y<=floorAt(camera.position.x,camera.position.z)+1.71&&!paused)velocity=6;keys.add(e.code);}});
   document.addEventListener('focusin',()=>keys.clear());document.addEventListener('visibilitychange',()=>keys.clear());
   document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();paused=true;});
+  let teleporting=false;
+  async function teleport(destination,data){
+    if(teleporting)throw new Error('传送正在进行');
+    if(!multiplayer.ready||multiplayer.ride||vehicles.active)throw new Error('请先下车，并等待世界连接完成');
+    if(![destination.x,destination.z].every(Number.isFinite)||Math.max(Math.abs(destination.x),Math.abs(destination.z))>MAX_COORDINATE*70)throw new Error('传送目的地无效');
+    teleporting=true;const previous={origin:{...origin},rows,planning,position:camera.position.clone(),target:controls.target.clone()};
+    try{
+      rows=data.plots;planning=data.planning;moveOrigin(Math.round(destination.x/70),Math.round(destination.z/70),false,false);refreshBuildings();
+      const required=rows.filter(r=>r.published&&desired.has(r.published)&&Math.hypot(r.cx-destination.x,r.cz-destination.z)<100).map(r=>r.published),deadline=performance.now()+12000;
+      while(required.some(id=>!loaded.has(id))){if(performance.now()>deadline)throw new Error('目的地建筑加载超时，请稍后重试');await new Promise(r=>setTimeout(r,100));}
+      let point=null;const radiusLimit=destination.code==='spawn'?1024:32;
+      search:for(const radius of [0,2,4,8,16,32,64,128,256,512,1024].filter(r=>r<=radiusLimit))for(let i=0;i<(radius?32:1);i++){
+        const x=destination.x+Math.cos(i*Math.PI/16)*radius-origin.x*70,z=destination.z+Math.sin(i*Math.PI/16)*radius-origin.z*70,y=terrain.surface(origin.x*70+x,origin.z*70+z)+1.7;
+        camera.position.y=y;if(!blocked(x,z,y)){point={x,y,z};break search;}
+      }
+      if(!point)throw new Error('目的地附近没有安全落点，请联系领地主人');
+      standUp();recallPersonal();vehicles.stop();savedSpawn=null;enterWalk(true,{lockPointer:false});
+      camera.position.set(point.x,point.y,point.z);yaw=destination.yaw||0;avatarYaw=yaw;pitch=-.08;camera.rotation.set(pitch,yaw,0);keys.clear();velocity=0;mouseLook.reset();focusElevation=false;
+    }catch(error){rows=previous.rows;planning=previous.planning;moveOrigin(previous.origin.x,previous.origin.z,false,false);camera.position.copy(previous.position);controls.target.copy(previous.target);refreshBuildings();throw error;}
+    finally{teleporting=false;}
+  }
   function setWalk(value,options={}){
+    if(multiplayer.ride){onError('请先下车再切换视角模式');return;}
     enterWalk(value,options);
     if(!value||!walking||!savedSpawn)return;
     const p=savedSpawn;savedSpawn=null;
@@ -196,7 +228,7 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
   function frame(now){requestAnimationFrame(frame);if(document.hidden||!ready||mapOpen){lastTime=now;return;}syncLandView();const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;
     if(!walking&&vehicles.active)vehicles.stop();vehicles.update(dt,keys,walking&&!paused,camera);
     walkMoved=false;
-    if(walking){if(!paused&&!seated&&!vehicles.active){let forward=Number(keys.has('KeyW'))-Number(keys.has('KeyS')),right=Number(keys.has('KeyD'))-Number(keys.has('KeyA'));const norm=Math.hypot(forward,right)||1,speed=(keys.has('ShiftLeft')||keys.has('ShiftRight')?10:5)*dt;forward/=norm;right/=norm;const dx=(right*Math.cos(yaw)-forward*Math.sin(yaw))*speed,dz=(-right*Math.sin(yaw)-forward*Math.cos(yaw))*speed;
+    if(walking){if(!paused&&!seated&&!vehicles.active&&!multiplayer.ride){let forward=Number(keys.has('KeyW'))-Number(keys.has('KeyS')),right=Number(keys.has('KeyD'))-Number(keys.has('KeyA'));const norm=Math.hypot(forward,right)||1,speed=(keys.has('ShiftLeft')||keys.has('ShiftRight')?10:5)*dt;forward/=norm;right/=norm;const dx=(right*Math.cos(yaw)-forward*Math.sin(yaw))*speed,dz=(-right*Math.sin(yaw)-forward*Math.cos(yaw))*speed;
       const beforeX=camera.position.x,beforeZ=camera.position.z;
       if(!blocked(camera.position.x+dx,camera.position.z,camera.position.y))camera.position.x+=dx;if(!blocked(camera.position.x,camera.position.z+dz,camera.position.y))camera.position.z+=dz;
       const movedX=camera.position.x-beforeX,movedZ=camera.position.z-beforeZ;walkMoved=Math.hypot(movedX,movedZ)>1e-6;avatarYaw=walkFacing(avatarYaw,movedX,movedZ,dt);
@@ -207,6 +239,7 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
         camera.position.x+=dx;camera.position.z+=dz;controls.target.x+=dx;controls.target.z+=dz;
       }controls.update();
     }
+    if(multiplayer.ride){const p=multiplayer.ride.pose;yaw+=Math.atan2(Math.sin(p.yaw-lastRideYaw),Math.cos(p.yaw-lastRideYaw));lastRideYaw=p.yaw;camera.rotation.set(pitch,yaw,0);camera.position.set(p.x-origin.x*70,p.y+1.62,p.z-origin.z*70);}
     const center=walking?camera.position:controls.target,dx=Math.round(center.x/PLOT.cell),dz=Math.round(center.z/PLOT.cell);if((dx||dz)&&now-lastRefresh>350){lastRefresh=now;moveOrigin(origin.x+dx,origin.z+dz,false);}
     if(town)town.visible=Math.abs(origin.x)<=5&&Math.abs(origin.z)<=5;
     if(walking&&now-lastTelemetry>100){lastTelemetry=now;canvas.dataset.walkPosition=JSON.stringify({x:origin.x*PLOT.cell+camera.position.x,y:camera.position.y,z:origin.z*PLOT.cell+camera.position.z,ground:floorAt(camera.position.x,camera.position.z),paused});}
@@ -214,7 +247,7 @@ export function createWorld({onSelect,onRegion,onError,onLandPoint,onLandMove}){
     updateInteraction(now);const renderCamera=renderView(dt);atmosphere.update(dt,renderCamera,walking&&paused);if(!walking){scene.fog=overviewFog;overviewFog.color.copy(scene.background);}terrain.update(dt,sun,reducedMotion||(walking&&paused),renderCamera);if(vehicles.active?.type==='car'&&!thirdPerson)vehicles.active.group.visible=false;renderer.render(scene,renderCamera);if(vehicles.active)vehicles.active.group.visible=true;
   }
   function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}window.addEventListener('resize',resize);resize();renderGrid();requestAnimationFrame(frame);
-  return {recallVehicle:recallPersonal,setPlayerIdentity:value=>multiplayer.setIdentity(value),setMapOpen(value){mapOpen=value;keys.clear();mouseLook.reset();controls.enabled=!value&&!walking;if(value){paused=true;document.exitPointerLock?.();}},get mapPose(){const v=vehicles.active,p=walking?camera.position:controls.target;return {x:v?v.x:origin.x*70+p.x,z:v?v.z:origin.z*70+p.z,heading:walking?(v?-v.heading:-yaw):Math.atan2(controls.target.x-camera.position.x,camera.position.z-controls.target.z)};},setLandDrawing(value){if(value&&walking)setWalk(false);landDrawing=value;document.body.dataset.land=String(value);controls.enableRotate=!value;},setLandDraft(points,color,elevation){draftPoints=points;draftColor=color;draftElevation=elevation;updateDraft();},focusPlot(plot){if(walking)setWalk(false);moveOrigin(Math.round(plot.cx/70),Math.round(plot.cz/70),true);selected={x:plot.x,z:plot.z};onSelect(selected);},findWater(){let best=null,distance=Infinity;const wx=origin.x*70,wz=origin.z*70;for(let x=-800;x<=800;x+=16)for(let z=-800;z<=800;z+=16){const d=x*x+z*z;if(d<distance&&terrain.ground(wx+x,wz+z)<-.2){best={x:Math.round((wx+x)/70),z:Math.round((wz+z)/70)};distance=d;}}return best;},setRows(values,plan){rows=values;planning=plan;renderGrid();if(focusElevation&&!walking){const h=terrain.surface(origin.x*70+controls.target.x,origin.z*70+controls.target.z);camera.position.y+=h-controls.target.y;controls.target.y=h;controls.update();focusElevation=false;}refreshBuildings();ready=true;},focus(x,z){if(walking)setWalk(false);selected={x,z};const lot=terrain.lotInfo(x,z);moveOrigin(lot?Math.round(lot.cx/70):x,lot?Math.round(lot.cz/70):z,true);onSelect(selected);},setWalk,get origin(){return {...origin};},get walking(){return walking;}};
+  return {teleport,get canTeleport(){return multiplayer.ready&&!multiplayer.ride&&!vehicles.active;},recallVehicle:recallPersonal,setPlayerIdentity:value=>multiplayer.setIdentity(value),setMapOpen(value){mapOpen=value;keys.clear();mouseLook.reset();controls.enabled=!value&&!walking;if(value){paused=true;document.exitPointerLock?.();}},get mapPlayers(){return multiplayer.mapPlayers;},get mapPose(){const v=vehicles.active,p=walking?camera.position:controls.target;return {x:v?v.x:origin.x*70+p.x,z:v?v.z:origin.z*70+p.z,heading:walking?(v?-v.heading:-yaw):Math.atan2(controls.target.x-camera.position.x,camera.position.z-controls.target.z)};},setLandDrawing(value){if(value&&walking)setWalk(false);landDrawing=value;document.body.dataset.land=String(value);controls.enableRotate=!value;},setLandDraft(points,color,elevation){draftPoints=points;draftColor=color;draftElevation=elevation;updateDraft();},focusPlot(plot){if(walking)setWalk(false);moveOrigin(Math.round(plot.cx/70),Math.round(plot.cz/70),true);selected={x:plot.x,z:plot.z};onSelect(selected);},findWater(){let best=null,distance=Infinity;const wx=origin.x*70,wz=origin.z*70;for(let x=-800;x<=800;x+=16)for(let z=-800;z<=800;z+=16){const d=x*x+z*z;if(d<distance&&terrain.ground(wx+x,wz+z)<-.2){best={x:Math.round((wx+x)/70),z:Math.round((wz+z)/70)};distance=d;}}return best;},setRows(values,plan){rows=values;planning=plan;renderGrid();if(focusElevation&&!walking){const h=terrain.surface(origin.x*70+controls.target.x,origin.z*70+controls.target.z);camera.position.y+=h-controls.target.y;controls.target.y=h;controls.update();focusElevation=false;}refreshBuildings();ready=true;},focus(x,z){if(walking)setWalk(false);selected={x,z};const lot=terrain.lotInfo(x,z);moveOrigin(lot?Math.round(lot.cx/70):x,lot?Math.round(lot.cz/70):z,true);onSelect(selected);},setWalk,get origin(){return {...origin};},get walking(){return walking;}};
 }
 
 export function createPreview(){

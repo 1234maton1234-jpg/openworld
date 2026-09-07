@@ -2,6 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {driveStep,VEHICLES,createVehicles} from '../src/vehicles.mjs';
 import {Scene,PerspectiveCamera} from 'three';
+
+test('exited cars coast without throttle, roll wheels and stop at obstacles',()=>{
+  let blocked=false;const system=createVehicles(new Scene(),{surface:()=>4.3,obstacle:()=>blocked,origin:()=>({x:0,z:0})}),camera=new PerspectiveCamera();
+  system.update(.01,new Set(),true,camera);const car=system.targets()[1].vehicle;system.enter(car);car.speed=8;assert.ok(system.exit());assert.equal(car.speed,8);
+  const z=car.z,wheel=car.wheels[0].spin.rotation.x;system.update(.05,new Set(['KeyW','KeyA']),true,camera);
+  assert.ok(car.z<z);assert.ok(car.speed>0&&car.speed<8);assert.notEqual(car.wheels[0].spin.rotation.x,wheel);assert.equal(car.steer,0);
+  const paused=car.z;system.update(.05,new Set(),false,camera);assert.equal(car.z,paused);
+  blocked=true;system.update(.05,new Set(),true,camera);assert.equal(car.speed,0);
+});
+test('coasting cars naturally stop and can be reentered without losing momentum',()=>{
+  const system=createVehicles(new Scene(),{surface:()=>4.3,obstacle:()=>false,origin:()=>({x:0,z:0})}),camera=new PerspectiveCamera();system.update(.01,new Set(),true,camera);const car=system.targets()[1].vehicle;
+  system.enter(car);car.speed=-4;system.exit();const z=car.z;system.update(.05,new Set(),true,camera);assert.ok(car.z>z);const speed=car.speed;system.enter(car);assert.equal(car.speed,speed);system.exit();
+  for(let i=0;i<100;i++)system.update(.05,new Set(),true,camera);assert.equal(car.speed,0);assert.equal(car.coasting,false);
+});
 test('origin changes move all vehicles immediately without advancing driving or wheels',()=>{
   const origin={x:0,z:0},system=createVehicles(new Scene(),{surface:()=>4.3,obstacle:()=>false,origin:()=>origin}),camera=new PerspectiveCamera();
   system.update(.016,new Set(),false,camera);const car=system.targets()[1].vehicle;system.enter(car);system.update(.05,new Set(['KeyW']),true,camera);

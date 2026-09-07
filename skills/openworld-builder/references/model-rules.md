@@ -6,8 +6,29 @@ Building limits and current upload behavior are verified against the project val
 
 - Units: meters; Y up; horizontal polygon coordinates are [X,Z]. Local boundary equals world polygon minus [plot.cx, plot.cz]. Older rectangular plots use width/depth around that center.
 - The server centers the complete transformed model bounding box in X/Z on the plot center and places its lowest Y on the foundation. Moving the GLB root is not a way to choose a different position on the plot. Check every triangle after subtracting the model bounds' horizontal center. Roofs and accessories count toward both bounds and containment.
-- Current limit: height 24 m; width/depth from the owned plot, not a universal 64 m square. Every projected triangle must fit the actual polygon, not merely its bounding rectangle. Avoid adding a base that extends beyond that polygon.
+- Current limit: height 600 m; width/depth from the owned plot, not a universal 64 m square. Every projected triangle must fit the actual polygon, not merely its bounding rectangle. Avoid adding a base that extends beyond that polygon.
 - Land ownership, public roads, water and other players' plots are not editable model space. The 2 m separation between claims is handled by the server; do not subtract an additional 2 m from the downloaded boundary as an invented requirement.
+
+## Seat compatibility
+
+Buildings with usable chairs, benches or sofas must include seat markers. The runtime reads glTF node `extras.interaction`, loaded as Three.js `node.userData.interaction`. A chair mesh or a node named `chair` alone does not enable sitting. Existing model-hash fallbacks are legacy exceptions, not an authoring interface.
+
+Export a separate empty node for each sitting place, parented under the building or chair. Place its origin at the intended sitting point on the seat surface, not at the chair's floor origin or backrest. For example, this glTF node defines a seat at local `[2, 0.48, -3]`:
+
+```json
+{
+  "name": "seat_01",
+  "translation": [2, 0.48, -3],
+  "extras": {"interaction": {"type": "seat", "yaw": 0}}
+}
+```
+
+- `type` must be `seat`. `yaw` is a finite number in radians, defaulting to 0. The facing vector is `[-sin(yaw), 0, -cos(yaw)]` in the marker's local coordinates: 0 faces -Z, π/2 faces -X. Marker and parent transforms also rotate this direction; avoid applying the same turn twice. Keep markers upright and avoid mirrored/nonuniform scale.
+- Position comes from the node origin and its parent transforms. Fields such as `interaction.position`, `height`, `radius` or `label` are not read. Do not put one marker on both a chair parent and its child, which creates duplicate interactions. A long bench needs one marker per usable place, with sufficient spacing.
+- In Blender, add an Empty and set `marker["interaction"] = {"type": "seat", "yaw": 0.0}`; enable **Custom Properties** (`export_extras=True`) for GLB export. Keep the Empty in the exported selection. Blender-to-glTF axis conversion also affects marker orientation, so inspect the exported marker's world direction. In Three.js authoring, assign `marker.userData.interaction` before export. Inspect the final GLB JSON to confirm the empty node, parent relationship and nested extras survived optimization/export. Extras are standard glTF metadata, not a forbidden extension; buildings still remain static and need no skeleton.
+- The current prompt requires the player to be within 3.2 m of the marker plus a 0.4 m upward offset, looking toward it (direction dot product at least 0.82), with no blocking geometry in the visibility test. Leave an accessible approach, legroom and room to stand; walls, tables and tall backrests can block interaction. Decorative geometry does not automatically create a safe approach.
+- `F` sits down; `F` again stands at the player's pre-sit position. The seated camera is 0.95 m above the marker; the character root is 0.90 m below it. Check the default avatar's hips against the cushion and avoid floating or embedded legs. Custom avatars use their own `sit` clip and are not automatically fitted to arbitrary chair dimensions. Seat markers do not implement exclusive occupancy, adjustable seating or furniture animation.
+- Verify the exported GLB in game: approach from the intended side, see `F · 坐下`, sit facing the right way, inspect first/third person, then stand without getting trapped. Check every distinct chair orientation and bench layout. If only metadata/local preview was checked, report in-game interaction as unverified; upload validation alone does not prove seat usability.
 
 ## GLB resources
 
@@ -45,7 +66,22 @@ These four tiers are a modeling convention for building and avatar emissive mate
 
 ## Vehicles
 
-- Personal vehicles use the existing small-car driving, collision and cockpit behavior. Use meters, Y up, front facing -Z; width at most 1.9 m, height 0.5–2 m, length at most 4.1 m. The complete model is centered in X/Z and its bottom rests on the ground. The driving seat/camera stays at the existing car position (center X/Z, eye height 1.25 m); keep that space clear for first-person driving. Model geometry does not change the collision footprint or seat position.
+### Seating layout
+
+- Personal cars support **1, 2 or 4 seats total, including the driver**. Seat 0 is reserved for the owner/driver; other players use passenger seats. A one-seat car cannot carry passengers. Only summoned personal cars participate in shared seating; the locally spawned demonstration vehicles are not shared instances.
+- New vehicle models should declare `extras.vehicle.seats` on exactly one exported node. Each entry is a seat-surface point `[X,Y,Z]` in meters, relative to the **complete car's centered X/Z and ground-level bottom**, after Y-up/-Z-forward export. These are normalized car-space coordinates, not the declaring node's local coordinates; node transforms do not rotate or translate the array. All seats face the car's forward -Z direction. Do not use building `interaction.type="seat"` markers for vehicles.
+- Four-seat example (omit the last two entries for a two-seat car; use `[[0,0.65,0]]` for a one-seat car):
+
+```json
+{"extras":{"vehicle":{"seats":[[-0.35,0.65,-0.3],[0.35,0.65,-0.3],[-0.35,0.65,0.6],[0.35,0.65,0.6]]}}}
+```
+
+- Every point must contain three finite numbers: X within ±0.85 m, Y from 0.3 to 1.2 m, Z within ±1.5 m. Horizontal distance between seats must be at least 0.45 m. Declared points must fit the actual car bounds with at least 0.3 m remaining above the seat; this is only a coarse validation, not sufficient human headroom. Plan roughly 0.75–0.95 m from cushion to roof, legroom, unobstructed windows, and room on both sides for entry/exit. Do not add four markers inside a body that physically fits only two people. Older models without metadata use a two-seat fallback at X ±0.35, Y 0.65, Z 0; this fallback does not prove a good physical fit.
+- Blender export: set a root Empty custom property `root["vehicle"] = {"seats": [[-0.35, 0.65, 0], [0.35, 0.65, 0]]}` and enable Custom Properties (`export_extras=True`). The numeric array is already in final game coordinates; Blender's axis conversion does not convert custom property numbers. Inspect the GLB JSON and use the normal `vehicle set` CLI command; there is no extra seat-count CLI flag. Building seat metadata and vehicle layout metadata are separate contracts.
+- The seated avatar root is 0.87 m below the cushion and the first-person eye is 0.75 m above it. Fit the seat, dashboard, windshield and steering wheel around these points; avoid an opaque body shell across the interior. Custom avatar `sit` clips may have different proportions, so test contacts rather than promising universal fit. Passengers cannot steer or accelerate, and decorative door meshes do not automatically open.
+- Nearby players look toward a stopped personal car and press `F` to board an available passenger seat, then `F` to exit. The server owns occupancy, rejects full cars and boarding while moving, and derives passenger positions from the car. Recall, owner disconnect, or invalidated seating releases passengers. Verify driver/passenger first and third person, simultaneous boarding, turning, safe exit, recall and disconnect. Model validation does not replace these multiplayer checks.
+
+- Personal vehicles use the existing small-car driving and collision behavior. Use meters, Y up, front facing -Z; width at most 1.9 m, height 0.5–2 m, length at most 4.1 m. The complete model is centered in X/Z and its bottom rests on the ground. Use the seating layout above for occupant and camera positions. Model geometry does not change the collision footprint.
 - Export a self-contained static PBR GLB within the same GLB resource limits above; no skins, baked animation clips, morph targets or extensions. Vehicle models do not need humanoid bones.
 - For animated wheels, export four separate assemblies named `wheel_fl`, `wheel_fr`, `wheel_rl`, `wheel_rr` (front/rear, left/right). Each node origin must be at its axle center, with every tire/rim part beneath that node. Do not nest one wheel assembly in another. The runtime rotates the assembly around car X and steers front wheels around car Y. Unnamed or body-merged wheels stay static; inspect rolling, steering and first-person visibility in game before claiming correct integration.
 - Upload with `node "<skill>/scripts/openworld.mjs" vehicle set "car.glb"` using the player's GitHub identity, or the game account panel's vehicle upload button. This replaces only that account's vehicle model, becomes available publicly and does not enter building review. Do not claim it was reviewed. Existing online appearances may take about 15 seconds to update.

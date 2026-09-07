@@ -2,10 +2,10 @@ import {Worker,isMainThread,parentPort,workerData} from 'node:worker_threads';
 import {RULES,fail} from './store.mjs';
 import {containsPolygon} from '../shared/polygon-land.mjs';
 
-export async function validateModel(bytes,plot=null,{avatar=false}={}){
+export async function validateModel(bytes,plot=null,{avatar=false,vehicle=false}={}){
   if(!Buffer.isBuffer(bytes)||bytes.length<28||bytes.length>RULES.maxBytes||bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(4)!==2||bytes.readUInt32LE(8)!==bytes.length)fail(400,'请上传不超过 12 MB 的有效 GLB 2.0 文件');
   return new Promise((resolve,reject)=>{
-    const worker=new Worker(new URL(import.meta.url),{workerData:{bytes,plot,avatar},resourceLimits:{maxOldGenerationSizeMb:128}});
+    const worker=new Worker(new URL(import.meta.url),{workerData:{bytes,plot,avatar,vehicle},resourceLimits:{maxOldGenerationSizeMb:128}});
     const timer=setTimeout(()=>{worker.terminate();reject(Object.assign(new Error('模型校验超时，请简化模型'),{status:400}));},12000);
     worker.once('message',result=>{clearTimeout(timer);worker.terminate();result.error?reject(Object.assign(new Error(result.error),{status:400})):resolve(result);});
     worker.once('error',()=>{clearTimeout(timer);reject(Object.assign(new Error('无法解析模型，请重新导出 GLB'),{status:400}));});
@@ -56,6 +56,8 @@ if(!isMainThread){
       pixels+=metadata.width*metadata.height;if(pixels>16*1024*1024)fail(400,'全部贴图总像素需不超过 1600 万');
       await sharp(input,{limitInputPixels:2048*2048}).raw().toBuffer();
     }
-    parentPort.postMessage({size,min:bounds.min,max:bounds.max,triangles,primitives,bytes:bytes.length});
+    let vehicleSeats;
+    if(workerData.vehicle){try{const declarations=(json.nodes||[]).filter(n=>n.extras?.vehicle?.seats!==undefined);if(declarations.length>1)throw new Error('座位配置只能声明一次');const {carSeats}=await import('../shared/car-seats.mjs');vehicleSeats=carSeats(declarations[0]?.extras.vehicle.seats);if(declarations.length&&vehicleSeats.some(p=>Math.abs(p[0])>size[0]/2||Math.abs(p[2])>size[2]/2||p[1]+.3>size[1]))throw new Error('座位超出车身或头部空间不足');}catch(error){fail(400,error.message);}}
+    parentPort.postMessage({size,min:bounds.min,max:bounds.max,triangles,primitives,bytes:bytes.length,...(vehicleSeats?{vehicleSeats}:{})});
   }catch(error){parentPort.postMessage({error:error.status?error.message:'GLB 模型或贴图无效，请重新导出'});}
 }
