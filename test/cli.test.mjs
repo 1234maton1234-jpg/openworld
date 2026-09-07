@@ -31,6 +31,15 @@ test('CLI session, avatar replacement and owned draft submission work end to end
     assert.equal((await fetch(config.url+'/api/vehicle',{method:'PUT',headers:{Origin:config.url,'Content-Type':'model/gltf-binary'},body:bytes})).status,401);
     assert.equal((await fetch(config.url+'/api/vehicle',{method:'PUT',headers:{...headers,'X-CSRF-Token':'bad','Content-Type':'model/gltf-binary'},body:bytes})).status,403);
     const oversized=await new NodeIO().readBinary(bytes);oversized.getRoot().listNodes()[0].setScale([20,1,1]);assert.equal((await fetch(config.url+'/api/vehicle',{method:'PUT',headers:{...headers,'Content-Type':'model/gltf-binary'},body:await new NodeIO().writeBinary(oversized)})).status,400);
+    for(const category of ['plane','boat']){
+      const extra=JSON.parse((await command('vehicle','set',file,'--category',category)).stdout);assert.equal(extra.category,category);
+      assert.equal((await (await fetch(config.url+'/api/vehicle?category='+category,{headers})).json()).id,extra.id);
+      assert.equal((await fetch(config.url+extra.url)).status,200);
+      assert.equal((await (await fetch(config.url+'/api/vehicle',{headers})).json()).id,vehicle.id);
+    }
+    const widePlane=await fetch(config.url+'/api/vehicle?category=plane',{method:'PUT',headers:{...headers,'Content-Type':'model/gltf-binary'},body:await new NodeIO().writeBinary(oversized)});assert.equal(widePlane.status,200);
+    assert.equal((await fetch(config.url+'/api/vehicle?category=boat',{method:'PUT',headers:{...headers,'Content-Type':'model/gltf-binary'},body:await new NodeIO().writeBinary(oversized)})).status,400);
+    assert.equal((await fetch(config.url+'/api/vehicle?category=__proto__',{headers})).status,400);
     let polygon;for(const lot of (await store.planner.around(0,0)).lots){const x=Math.round(lot.cx/2)*2,z=Math.round(lot.cz/2)*2,p=[[x-16,z-16],[x+16,z-16],[x+16,z+16],[x-16,z+16]];try{(await store.checkLand(p));polygon=p;break;}catch{}}assert.ok(polygon);(await store.claimLand('1001',polygon));
     const draft=JSON.parse((await command('plot','upload',file,'--title','Test model')).stdout);assert.equal(draft.status,'draft');assert.equal((await store.getSubmission(draft.id)),undefined);assert.equal((await fetch(config.url+'/assets/'+draft.id+'.glb')).status,404);
     const visitor=(await testSession(store,'1002')),other={Origin:config.url,Cookie:visitor.cookie,'X-CSRF-Token':visitor.csrf};

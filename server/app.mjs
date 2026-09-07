@@ -25,7 +25,7 @@ export async function createApp(config){
     next();
   });
   app.use(express.json({limit:'16kb'}));
-  try{await installAuth(app,store,config);await installCliApi(app,store,uploads);await installTeleports(app,store);}catch(error){await store.close();throw error;}
+  try{if(config.devAvatarFile){const {installDevelopmentAvatar}=await import('./development-avatar.mjs');await installDevelopmentAvatar(app,config);}await installAuth(app,store,config);await installCliApi(app,store,uploads);await installTeleports(app,store);}catch(error){await store.close();throw error;}
   app.get('/api/world',async (req,res)=>{const x=coordinate(Number(req.query.x??0)),z=coordinate(Number(req.query.z??0)),r=Number(req.query.radius??3);if(!Number.isInteger(r)||r<1||r>4)fail(400,'加载范围无效');res.json({plots:(await store.world(x,z,r)),planning:{...(await store.planner.around(x,z)),lots:[],freeform:true},rules:RULES});});
   app.get('/api/mine',requireUser,async (req,res)=>res.json({plot:(await store.getPlot(req.user.id))||null,submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))}));
   app.patch('/api/plots/mine',requireUser,async (req,res)=>{

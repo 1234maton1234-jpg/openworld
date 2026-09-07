@@ -8,7 +8,7 @@ export function createCarRides(peers){
     if(peer.ride)throw new Error('你已经在车内');
     if(!peer.pose?.active||peer.pose.seated||peer.pose.vehicleType||peer.pose.personalCar?.driving)throw new Error('请先下车或起身');
     if(!owner||owner===peer||!car||Date.now()-owner.updated>3000)throw new Error('车辆已离开');
-    if(Math.hypot(peer.pose.x-car.x,peer.pose.z-car.z)>3.2||Math.abs(peer.pose.y-car.y)>3)throw new Error('请靠近车辆');
+    if(Math.hypot(peer.pose.x-car.x,peer.pose.z-car.z)>(car.type==='plane'?10:car.type==='boat'?8:3.2)||Math.abs(peer.pose.y-car.y)>(car.type==='boat'?6:3))throw new Error('请靠近车辆');
     if((owner.carSpeed||0)>1.5)throw new Error('请等车辆停稳后再上车');
     const seats=owner.seats||carSeats(),used=new Set([...peers.values()].filter(p=>p.ride?.owner===ownerId).map(p=>p.ride.seat));
     const index=seats.findIndex((_,i)=>i>0&&!used.has(i));if(index<0)throw new Error('车辆已满员');

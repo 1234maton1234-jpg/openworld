@@ -10,6 +10,6 @@ export function collectInteractions(root,hash=''){
 export function seatPosition(seat){seat.node.updateWorldMatrix(true,false);return seat.node.localToWorld(new Vector3(...seat.position));}
 export function findInteraction(seats,eye,direction,visible=()=>true){
   let best=null,score=Infinity;
-  for(const seat of seats){const target=seatPosition(seat).add(new Vector3(0,.4,0)),delta=target.clone().sub(eye),distance=delta.length();if(distance>3.2||distance<.01||delta.normalize().dot(direction)<.82||!visible(target,distance))continue;if(distance<score){score=distance;best=seat;}}
+  for(const seat of seats){const target=seatPosition(seat).add(new Vector3(0,.4,0)),delta=target.clone().sub(eye),distance=delta.length();if(distance>Math.min(10,seat.range||3.2)||distance<.01||delta.normalize().dot(direction)<.82||!visible(target,distance))continue;if(distance<score){score=distance;best=seat;}}
   return best;
 }

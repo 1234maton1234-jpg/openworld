@@ -57,7 +57,7 @@ if(!isMainThread){
       await sharp(input,{limitInputPixels:2048*2048}).raw().toBuffer();
     }
     let vehicleSeats;
-    if(workerData.vehicle){try{const declarations=(json.nodes||[]).filter(n=>n.extras?.vehicle?.seats!==undefined);if(declarations.length>1)throw new Error('座位配置只能声明一次');const {carSeats}=await import('../shared/car-seats.mjs');vehicleSeats=carSeats(declarations[0]?.extras.vehicle.seats);if(declarations.length&&vehicleSeats.some(p=>Math.abs(p[0])>size[0]/2||Math.abs(p[2])>size[2]/2||p[1]+.3>size[1]))throw new Error('座位超出车身或头部空间不足');}catch(error){fail(400,error.message);}}
+    if(workerData.vehicle){try{const declarations=(json.nodes||[]).filter(n=>n.extras?.vehicle?.seats!==undefined);if(declarations.length>1)throw new Error('座位配置只能声明一次');const {carSeats}=await import('../shared/car-seats.mjs');vehicleSeats=carSeats(declarations[0]?.extras.vehicle.seats,typeof workerData.vehicle==='string'?workerData.vehicle:'car');if(declarations.length&&vehicleSeats.some(p=>Math.abs(p[0])>size[0]/2||Math.abs(p[2])>size[2]/2||p[1]+.3>size[1]))throw new Error('座位超出车身或头部空间不足');}catch(error){fail(400,error.message);}}
     parentPort.postMessage({size,min:bounds.min,max:bounds.max,triangles,primitives,bytes:bytes.length,...(vehicleSeats?{vehicleSeats}:{})});
   }catch(error){parentPort.postMessage({error:error.status?error.message:'GLB 模型或贴图无效，请重新导出'});}
 }

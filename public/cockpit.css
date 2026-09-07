@@ -1,15 +1,6 @@
-#car-cockpit{position:fixed;inset:0;z-index:4;pointer-events:none;color:#e6eddf;font-family:Consolas,"Microsoft YaHei",monospace}
-#car-cockpit[hidden]{display:none}
-#driving-help{position:fixed;right:24px;top:50%;bottom:auto;transform:translateY(-50%);z-index:10;pointer-events:none;color:#e6eddf;font-family:Consolas,"Microsoft YaHei",monospace}body[data-driving=true] #walk-hud>p{display:none!important}@media(max-width:650px){#driving-help{right:10px}}
-.dashboard{position:absolute;bottom:0;left:0;width:100%;height:30vh;min-height:150px;filter:drop-shadow(0 -5px 12px #0005)}
-.cockpit-pillar{position:absolute;bottom:22vh;width:36px;height:85vh;background:linear-gradient(90deg,#17211d,#36423a,#15201b);border:2px solid #59625466;transform-origin:bottom}
-.cockpit-pillar.left{left:0;transform:rotate(-14deg)}.cockpit-pillar.right{right:0;transform:rotate(14deg)}
-.steering-wheel{position:absolute;bottom:-12vh;left:38%;width:clamp(210px,28vw,380px);transform:translateX(-50%);filter:drop-shadow(0 6px 8px #0008)}
-.instrument-cluster{position:absolute;bottom:12vh;left:38%;transform:translateX(-50%);width:220px;padding:12px 22px 20px;background:linear-gradient(#0d1915,#152a21);border:3px solid #3b4940;border-radius:60px 60px 14px 14px;text-align:center;box-shadow:0 0 0 8px #15201b}
-.cluster-label{font-size:9px;letter-spacing:2px;color:#a3b697}.speed-line{display:flex;align-items:center;justify-content:center;gap:18px}.speed{font-size:48px;font-weight:400;line-height:1.1;font-variant-numeric:tabular-nums}.gear{font-size:22px;color:#d4b46c}.speed-unit{font-size:11px;color:#a3b697}.speed-track{height:3px;background:#39483d;margin:10px 12px}.speed-track i{display:block;height:100%;background:#b5d398}.brake-state{font-size:10px;color:#a3b697}.brake-state.braking{color:#ffc28d}
-.driving-keys{position:absolute;right:24px;bottom:34vh;display:grid;gap:9px;font-size:12px;text-shadow:0 2px 4px #000}.driving-keys span{display:flex;gap:12px;align-items:center}.driving-keys kbd{min-width:55px;text-align:center;padding:4px;border:1px solid #ffffff60;border-radius:4px;background:#14241ecd;font:inherit}
-.driving-summary{font-size:12px;font-weight:500;margin-bottom:4px;font-variant-numeric:tabular-nums}#driving-help kbd{min-width:46px;text-align:left;padding:0;border:0;background:transparent}#driving-help [hidden]{display:none!important}
-.brake-state{position:absolute;top:-26px;right:12px;padding:4px 10px;border-radius:4px;background:#13201be6}
-body[data-cockpit=true] header,body[data-cockpit=true] footer,body[data-cockpit=true] #walk-hud>p,body[data-cockpit=true] .reticle,body[data-cockpit=true] #interaction-hint{display:none!important}
+#driving-help{position:fixed;right:24px;bottom:24px;z-index:10;pointer-events:none;color:#e6eddf;font:12px Consolas,"Microsoft YaHei",monospace;display:grid;gap:8px;padding:14px 18px;border:1px solid #ffffff25;border-radius:10px;background:#14241eb3;text-shadow:0 1px 3px #000}
+#driving-help[hidden],#driving-help [hidden]{display:none!important}
+.driving-keys span{display:flex;gap:12px;align-items:center}.driving-keys kbd{min-width:46px;font:inherit;color:#d4b46c}.driving-summary{font-weight:500;font-variant-numeric:tabular-nums}
+body[data-driving=true] #walk-hud>p,body[data-cockpit=true] header,body[data-cockpit=true] footer,body[data-cockpit=true] .reticle,body[data-cockpit=true] #interaction-hint{display:none!important}
 body[data-cockpit=true] #exit-walk{top:20px;z-index:5}body[data-cockpit=true] .sky-toolbar{top:20px}
-@media(max-width:650px){.instrument-cluster{left:34%;width:150px;padding:10px}.steering-wheel{left:34%;bottom:-70px;width:250px}.speed{font-size:36px}.driving-keys{right:10px;font-size:10px;gap:5px}.cockpit-pillar{width:20px}}
+@media(max-width:650px){#driving-help{right:10px;bottom:10px;font-size:10px;padding:10px;gap:5px}}

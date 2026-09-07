@@ -1,7 +1,10 @@
 import * as T from 'three';
 import {releaseCar} from './custom-car.mjs';
+import {VEHICLE_TYPES,vehicleCategory} from '../shared/vehicle-types.mjs';
+import {carSeats} from '../shared/car-seats.mjs';
+import {addCarInterior} from './car-interior.mjs';
 
-export const VEHICLES={bike:{name:'单车',max:9,accel:3,reverse:2,radius:.4,length:1.8},car:{name:'小汽车',max:30,accel:7.5,reverse:5,radius:.95,length:4.1}};
+export const VEHICLES={bike:{name:'单车',max:9,accel:3,reverse:2,radius:.4,length:1.8},...VEHICLE_TYPES};
 const approach=(a,b,rate,dt)=>a+(b-a)*(1-Math.exp(-rate*dt));
 const angleDelta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
 function carStep(v,input,dt,canMove){
@@ -25,6 +28,20 @@ function carStep(v,input,dt,canMove){
   }
 }
 export function driveStep(v,input,dt,canMove){
+  if(v.type==='plane'||v.type==='boat'){
+    dt=Math.max(0,Math.min(dt,.05));const c=VEHICLES[v.type],plane=v.type==='plane',steps=Math.max(1,Math.ceil(dt*120));
+    for(let i=0;i<steps;i++){
+      const step=dt/steps,throttle=Number(!!input.forward)-Number(!!input.back),drag=input.brake?10:plane?.18:.8;
+      v.speed=throttle&&!input.brake?T.MathUtils.clamp(v.speed+throttle*c.accel*step,-c.reverse,c.max):Math.sign(v.speed)*Math.max(0,Math.abs(v.speed)-drag*step);
+      const steer=Number(!!input.left)-Number(!!input.right);v.steerAngle=approach(v.steerAngle||0,steer*.3,4,step);
+      const heading=v.heading+v.steerAngle*Math.min(1.5,Math.abs(v.speed)*.15)*Math.sign(v.speed)*step;
+      const rise=plane?(v.speed>12?(Number(!!input.up)-Number(!!input.down))*Math.min(9,v.speed*.25):0):0;
+      const y=plane?Math.min(600,(v.y||0)+(rise-(v.airborne&&v.speed<12?3:0))*step):v.y;
+      const x=v.x-Math.sin(heading)*v.speed*step,z=v.z-Math.cos(heading)*v.speed*step;
+      if(!canMove(x,z,heading,y)){v.speed=0;break;}
+      v.x=x;v.z=z;v.heading=heading;v.y=y;v.pitch=plane?approach(v.pitch||0,Math.atan2(rise,Math.max(12,v.speed)),3,step):0;
+    }return;
+  }
   if(v.type==='car'){carStep(v,input,Math.max(0,Math.min(dt,.05)),canMove);return;}
   dt=Math.max(0,Math.min(dt,.05));const c=VEHICLES[v.type],throttle=Number(!!input.forward)-Number(!!input.back),brake=input.brake?14:throttle===0?1.8:0;
   v.speed=brake?Math.sign(v.speed)*Math.max(0,Math.abs(v.speed)-brake*dt):Math.max(-c.reverse,Math.min(c.max,v.speed+throttle*c.accel*dt));
@@ -42,14 +59,28 @@ export function createVehicleModel(type){
   function tube(a,b,r,m='paint'){const x=new T.Vector3(...a),y=new T.Vector3(...b),o=mesh(new T.CylinderGeometry(r,r,x.distanceTo(y),8),m,...x.clone().add(y).multiplyScalar(.5).toArray());o.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),y.sub(x).normalize());}
   function assembleWheel(start,x,y,z,radius){const pivot=new T.Group(),spin=new T.Group();pivot.position.set(x,y,z);for(const part of group.children.slice(start)){part.position.sub(pivot.position);spin.add(part);}pivot.add(spin);group.add(pivot);wheels.push({pivot,spin,radius,front:z<0});}
   if(type==='car'){
-    box(0,.68,0,1.8,.62,4.1,'paint');box(0,1.18,.25,1.55,.62,1.95,'glass');box(0,1.53,.25,1.65,.13,2.05,'paint');
-    for(const x of [-.77,.77])for(const z of [-.68,1.16])box(x,1.2,z,.12,.64,.13,'paint');
+    Object.assign(materials.glass,{transparent:true,opacity:.12,depthWrite:false,side:T.DoubleSide});
+    box(0,.48,0,1.8,.22,4.1,'paint');box(0,.76,-1.55,1.8,.36,1,'paint');box(0,.76,1.65,1.8,.36,.8,'paint');box(0,1.77,.1,1.8,.1,2.35,'paint');
+    for(const x of [-.86,.86]){box(x,.76,.1,.08,.4,2.2,'paint');box(x,1.35,.1,.015,.74,2.15,'glass');for(const z of [-1,1.2])box(x,1.36,z,.065,.78,.07,'paint');}
+    for(const z of [-1,1.2])box(0,1.35,z,1.67,.74,.015,'glass');
+    addCarInterior(group);
     for(const z of [-2.08,2.08])box(0,.48,z,1.75,.16,.13,'metal');
     for(const x of [-.58,.58])box(x,.8,-2.065,.4,.2,.045,'lamp');
     for(const x of [-.94,.94])for(const z of [-1.25,1.25]){const start=group.children.length;mesh(new T.CylinderGeometry(.36,.36,.22,20),'rubber',x,.38,z,0,0,Math.PI/2);mesh(new T.CylinderGeometry(.1,.1,.25,12),'metal',x,.38,z,0,0,Math.PI/2);
       for(const side of [-1,1])for(let i=0;i<5;i++){const angle=i*Math.PI*2/5; tube([x+side*.125,.38+Math.cos(angle)*.07,z+Math.sin(angle)*.07],[x+side*.125,.38+Math.cos(angle)*.28,z+Math.sin(angle)*.28],.035,'metal');}
       assembleWheel(start,x,.38,z,.36);
     }
+  }else if(type==='plane'){
+    const body=mesh(new T.SphereGeometry(1,20,12),'paint',0,1.05,0);body.scale.set(.65,.65,3.7);
+    box(0,1.9,-.65,1.1,.8,1.8,'glass');box(0,2.38,-.65,1.2,.12,1.85,'paint');
+    box(0,1.8,0,9.8,.15,1.5,'paint');box(0,1.45,2.8,3.5,.12,.85,'paint');box(0,2,2.8,.15,1.35,1,'paint');
+    for(const x of [-.8,.8]){tube([x,1,0],[x,.28,.2],.055,'metal');const start=group.children.length;mesh(new T.CylinderGeometry(.27,.27,.18,16),'rubber',x,.27,.2,0,0,Math.PI/2);assembleWheel(start,x,.27,.2,.27);}
+    box(0,1.1,-3.7,.12,1.9,.1,'metal').name='propeller';box(0,.65,0,1.3,.15,1.4,'rubber');
+  }else if(type==='boat'){
+    const hull=new T.Shape();hull.moveTo(-1.4,3.3);hull.lineTo(1.4,3.3);hull.lineTo(1.4,-1.6);hull.lineTo(.7,-3.1);hull.lineTo(0,-3.5);hull.lineTo(-.7,-3.1);hull.lineTo(-1.4,-1.6);hull.closePath();
+    const geometry=new T.ExtrudeGeometry(hull,{depth:.65,bevelEnabled:false});geometry.rotateX(Math.PI/2);geometry.translate(0,.65,0);mesh(geometry,'paint',0,0,0);
+    for(const x of [-1.3,1.3])box(x,.8,.55,.14,.4,4.6,'paint');
+    box(0,1.2,-1.1,2.25,.65,.12,'glass');box(0,.65,.35,1.7,.16,1.1,'rubber');box(0,.9,3.2,.6,1,.5,'metal');
   }else{
     for(const z of [-.73,.73]){const start=group.children.length;mesh(new T.TorusGeometry(.34,.055,8,20),'rubber',0,.4,z,0,Math.PI/2);for(let i=0;i<8;i++){const a=i*Math.PI/4;tube([0,.4,z],[0,.4+Math.sin(a)*.31,z+Math.cos(a)*.31],.012,'metal');}assembleWheel(start,0,.4,z,.34);}
     const a=[0,.4,.73],b=[0,.4,-.73],c=[0,.5,.05],d=[0,.94,.32],e=[0,.98,-.48];
@@ -57,38 +88,49 @@ export function createVehicleModel(type){
     tube(d,[0,1.12,.35],.03,'metal');box(0,1.14,.35,.3,.1,.4,'rubber');tube(e,[0,1.2,-.5],.035,'metal');tube([-.35,1.2,-.5],[.35,1.2,-.5],.035,'rubber');box(0,.47,.05,.45,.06,.16,'metal');
   }
   const pedals=[];if(type==='bike')for(const side of [-1,1])pedals.push(box(side*.22,.5,.05,.2,.06,.16,'metal'));
-  return {group,wheels,pedals};
+  return {group,wheels,pedals,...(type!=='bike'?{seats:carSeats(undefined,type)}:{})};
 }
-export function createVehicles(scene,{surface,obstacle,origin}){
+export function createVehicles(scene,{surface,ground=surface,obstacle,origin}){
   const items=['bike','car'].map((type,i)=>{const {group,wheels,pedals}=createVehicleModel(type);scene.add(group);return {type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,group,wheels,pedals,y:null};});
-  let active=null,personal=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;
-  function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.y=v.heading;v.group.updateMatrixWorld(true);}}
-  function clear(v,x,z,heading,base){const c=VEHICLES[v.type];for(const along of [-c.length/2+.2,0,c.length/2-.2]){const px=x-Math.sin(heading)*along,pz=z-Math.cos(heading)*along,h=surface(px,pz);if(h<.5||Math.abs(h-base)>.45||obstacle(px,pz,h,c.radius))return false;for(const other of items)if(other!==v&&Math.hypot(px-other.x,pz-other.z)<c.radius+VEHICLES[other.type].radius)return false;}return true;}
-  function exit(){if(!active)return null;const v=active,c=VEHICLES[v.type];for(const side of [-1,1])for(const along of [0,-c.length/2-1,c.length/2+1]){const x=v.x+Math.cos(v.heading)*(c.radius+1)*side-Math.sin(v.heading)*along,z=v.z-Math.sin(v.heading)*(c.radius+1)*side-Math.cos(v.heading)*along,h=surface(x,z);if(h>=.5&&Math.abs(h-v.y)<1&&!obstacle(x,z,h,.35)){active=null;v.coasting=v.type==='car'&&Math.abs(v.speed)>.01;if(!v.coasting)v.speed=0;return {x,y:h+1.7,z,heading:v.heading};}}return null;}
+  let active=null,personal=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;const firstPersonLook={yaw:0,pitch:-.08};
+  function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.set(v.pitch||0,v.heading,0,'YXZ');v.group.updateMatrixWorld(true);}}
+  function clear(v,x,z,heading,base){
+    const c=VEHICLES[v.type],boat=v.type==='boat',plane=v.type==='plane';
+    for(const along of [-c.length/2+.2,0,c.length/2-.2])for(const side of plane||boat?[-c.radius,0,c.radius]:[0]){
+      const px=x-Math.sin(heading)*along+Math.cos(heading)*side,pz=z-Math.cos(heading)*along-Math.sin(heading)*side,h=surface(px,pz);
+      if(boat){if(ground(px,pz)>-.8||(h>=-.35&&h<3.3)||obstacle(px,pz,0,.35))return false;}
+      else if(plane){if((h<.5&&base<.8)||h>base+.45||(obstacle(px,pz,base,1.5)||obstacle(px,pz,base+1.6,1.5)))return false;}
+      else if(h<.5||Math.abs(h-base)>.45||obstacle(px,pz,h,c.radius))return false;
+      for(const other of items)if(other!==v&&Math.abs((other.y??surface(other.x,other.z))-base)<3.5&&Math.hypot(px-other.x,pz-other.z)<(plane||boat ? .35 : c.radius)+VEHICLES[other.type].radius)return false;
+    }return true;
+  }
+  function exit(checkOnly=false){if(!active)return null;const v=active,c=VEHICLES[v.type];if((v.type==='boat'||v.type==='plane')&&Math.abs(v.speed)>1.5)return null;for(const distance of v.type==='boat'?[c.radius+1,4,6]:[c.radius+1])for(const side of [-1,1])for(const along of [0,-c.length/2-1,c.length/2+1]){const x=v.x+Math.cos(v.heading)*distance*side-Math.sin(v.heading)*along,z=v.z-Math.sin(v.heading)*distance*side-Math.cos(v.heading)*along,h=surface(x,z);if(h>=.5&&Math.abs(h-v.y)<(v.type==='boat'?6:1)&&!obstacle(x,z,h,.35)){if(checkOnly)return true;active=null;v.coasting=v.type==='car'&&Math.abs(v.speed)>.01;if(!v.coasting)v.speed=0;return {x,y:h+1.7,z,heading:v.heading};}}return null;}
   return {
     get personal(){return personal;},
     replacePersonal(model){if(!personal){releaseCar(model.group);return;}releaseCar(personal.group);Object.assign(personal,model);scene.add(personal.group);rebase();},
-    summon(x,z,heading,model){
-      if(personal)return false;const v={type:'car',x,z,heading,speed:0,crankPhase:0,y:null};
-      let found=false;for(const angle of [0,-Math.PI/4,Math.PI/4,Math.PI/2,-Math.PI/2,Math.PI]){const px=x-Math.sin(heading+angle)*6,pz=z-Math.cos(heading+angle)*6,h=surface(px,pz);if(clear(v,px,pz,heading,h)){v.x=px;v.z=pz;v.y=h;found=true;break;}}
-      if(!found)return false;Object.assign(v,model||createVehicleModel('car'));personal=v;items.push(v);scene.add(v.group);rebase();return true;
+    summon(x,z,heading,model,type='car'){
+      vehicleCategory(type);
+      if(personal)return false;const v={type,x,z,heading,speed:0,crankPhase:0,y:null,returnPosition:{x,y:surface(x,z)+1.7,z}};
+      let found=false;search:for(const distance of type==='boat'?[3,4.5,6]:[type==='plane'?10:6])for(const angle of [0,-Math.PI/4,Math.PI/4,Math.PI/2,-Math.PI/2,Math.PI]){const px=x-Math.sin(heading+angle)*distance,pz=z-Math.cos(heading+angle)*distance,h=type==='boat'?-.35:surface(px,pz);if((type!=='plane'||h>=.5)&&clear(v,px,pz,heading,h)){v.x=px;v.z=pz;v.y=h;found=true;break search;}}
+      if(!found)return false;Object.assign(v,model||createVehicleModel(type));personal=v;items.push(v);scene.add(v.group);rebase();return true;
     },
     recall(){if(!personal)return false;if(active===personal){active.speed=0;active=null;}const v=personal;personal=null;items.splice(items.indexOf(v),1);releaseCar(v.group);return true;},
-    get active(){return active;},
+    get active(){return active;},canExit:()=>!!exit(true),
+    get firstPersonLook(){return {...firstPersonLook};},
     rebase,
-    targets(){return items.map(v=>({root:v.group,node:v.group,position:[0,.8,0],yaw:v.heading,vehicle:v}));},
-    enter(v){active=v;v.speed=v.coasting?v.speed:0;v.coasting=false;v.yawRate=0;v.travelHeading=v.heading;v.steer=0;v.reverseWait=0;orbit=0;pitch=.3;chaseHeading=v.heading;lookIdle=0;},exit,
+    targets(){return items.map(v=>({root:v.group,node:v.group,position:[0,.8,0],range:v.type==='plane'?10:v.type==='boat'?8:3.2,yaw:v.heading,vehicle:v}));},
+    enter(v){active=v;v.speed=v.coasting?v.speed:0;v.coasting=false;v.yawRate=0;v.travelHeading=v.heading;v.steer=0;v.reverseWait=0;orbit=0;pitch=.3;chaseHeading=v.heading;lookIdle=0;firstPersonLook.yaw=0;firstPersonLook.pitch=-.08;},exit,
     stop(){if(active)active.speed=0;active=null;},
-    look(dx,dy){orbit-=dx*.0025;pitch=T.MathUtils.clamp(pitch+dy*.002,-.05,.9);lookIdle=1.5;},
-    blocks(x,z,r=.35){return items.some(v=>{const dx=x-v.x,dz=z-v.z,c=VEHICLES[v.type],side=dx*Math.cos(v.heading)-dz*Math.sin(v.heading),along=dx*Math.sin(v.heading)+dz*Math.cos(v.heading);return Math.abs(side)<c.radius+r&&Math.abs(along)<c.length/2+r;});},
+    look(dx,dy,firstPerson=false){if(firstPerson){firstPersonLook.yaw=T.MathUtils.clamp(firstPersonLook.yaw-dx*.0025,-2.65,2.65);firstPersonLook.pitch=T.MathUtils.clamp(firstPersonLook.pitch-dy*.0025,-1.1,.9);return;}orbit-=dx*.0025;pitch=T.MathUtils.clamp(pitch+dy*.002,-.05,.9);lookIdle=1.5;},
+    blocks(x,z,r=.35,y=surface(x,z)){return items.some(v=>{if(y+1.7<v.y||y>v.y+(VEHICLES[v.type].height||2))return false;const dx=x-v.x,dz=z-v.z,c=VEHICLES[v.type],side=dx*Math.cos(v.heading)-dz*Math.sin(v.heading),along=dx*Math.sin(v.heading)+dz*Math.cos(v.heading);return Math.abs(side)<c.radius+r&&Math.abs(along)<c.length/2+r;});},
     update(dt,keys,enabled,camera){
-      for(const v of items){if(v.y===null)v.y=surface(v.x,v.z);if(v===active&&enabled){driveStep(v,{forward:keys.has('KeyW'),back:keys.has('KeyS'),left:keys.has('KeyA'),right:keys.has('KeyD'),brake:keys.has('Space'),handbrake:keys.has('ShiftLeft')||keys.has('ShiftRight')},dt,(x,z,h)=>clear(v,x,z,h,v.y));v.y=surface(v.x,v.z);}else if(v.coasting&&enabled){
+      for(const v of items){if(v.y===null)v.y=surface(v.x,v.z);if(v===active&&enabled){driveStep(v,{forward:keys.has('KeyW'),back:keys.has('KeyS'),left:keys.has('KeyA'),right:keys.has('KeyD'),brake:keys.has('Space'),up:keys.has('KeyE'),down:keys.has('KeyQ'),handbrake:keys.has('ShiftLeft')||keys.has('ShiftRight')},dt,(x,z,h,y)=>clear(v,x,z,h,v.type==='plane'?Math.max(y,surface(x,z)>=.5&&surface(x,z)<=v.y+.45?surface(x,z):.8):v.y));if(v.type==='boat')v.y=-.35;else if(v.type==='plane'){v.y=Math.max(v.y,surface(v.x,v.z)>=.5?surface(v.x,v.z):.8);v.airborne=v.y>surface(v.x,v.z)+.5;}else v.y=surface(v.x,v.z);}else if(v.coasting&&enabled){
         const beforeX=v.x,beforeZ=v.z,sign=Math.sign(v.speed);driveStep(v,{},dt,(x,z,h)=>clear(v,x,z,h,v.y));v.y=surface(v.x,v.z);
         const travel=Math.hypot(v.x-beforeX,v.z-beforeZ)*sign;v.crankPhase+=travel*1.4;for(const wheel of v.wheels){wheel.spin.rotation.x-=travel/wheel.radius;wheel.pivot.rotation.y=wheel.front?v.steerAngle||0:0;}
         v.speed=Math.sign(v.speed)*Math.max(0,Math.abs(v.speed)-1.8*Math.min(.05,Math.max(0,dt)));if(Math.abs(v.speed)<.05){v.speed=0;v.yawRate=0;v.coasting=false;}
       }}rebase();
       if(active&&enabled){chaseHeading+=angleDelta(chaseHeading,active.heading)*(1-Math.exp(-6*dt));lookIdle=Math.max(0,lookIdle-dt);if(!lookIdle&&Math.abs(active.speed)>2)orbit+=angleDelta(orbit,0)*(1-Math.exp(-2*dt));}
-      if(active){const v=active,o=origin(),angle=chaseHeading+orbit,d=v.type==='car'?6+Math.abs(v.speed)*.045:4.5,target=new T.Vector3(v.x-o.x*70,v.y+1,v.z-o.z*70);if(enabled){v.crankPhase+=v.speed*dt*1.4;v.pedals.forEach((p,i)=>{const a=v.crankPhase+i*Math.PI;p.position.y=.5+.17*Math.sin(a);p.position.z=.05+.17*Math.cos(a);});for(const wheel of v.wheels){wheel.spin.rotation.x-=v.speed*dt/wheel.radius;wheel.pivot.rotation.y=wheel.front?v.steerAngle||0:0;}}camera.position.set(target.x+Math.sin(angle)*d,target.y+1.4+Math.sin(pitch)*d,target.z+Math.cos(angle)*d);camera.lookAt(target);}
+      if(active){const v=active,o=origin(),angle=chaseHeading+orbit,d=v.type==='plane'?15:v.type==='boat'?9:v.type==='car'?6+Math.abs(v.speed)*.045:4.5,target=new T.Vector3(v.x-o.x*70,v.y+1,v.z-o.z*70);if(enabled){v.crankPhase+=v.speed*dt*1.4;const propeller=v.group.getObjectByName('propeller');if(propeller)propeller.rotation.z=v.crankPhase*8;v.pedals.forEach((p,i)=>{const a=v.crankPhase+i*Math.PI;p.position.y=.5+.17*Math.sin(a);p.position.z=.05+.17*Math.cos(a);});for(const wheel of v.wheels){wheel.spin.rotation.x-=v.speed*dt/wheel.radius;wheel.pivot.rotation.y=wheel.front?v.steerAngle||0:0;}}camera.position.set(target.x+Math.sin(angle)*d,target.y+1.4+Math.sin(pitch)*d,target.z+Math.cos(angle)*d);camera.lookAt(target);}
     }
   };
 }

@@ -65,23 +65,25 @@ export function createMultiplayer(scene,{origin,onError,onRestore,onDisconnect,o
   }
   function updateCar(id,p,dt,o){
     const target=p.target.personalCar;if(!target){if(p.car)releaseCar(p.car.group);p.car=null;p.carPose=null;return;}
-    if(!p.car){p.car={...createVehicleModel('car'),modelId:null};scene.add(p.car.group);}
+    const type=target.type||'car';if(p.car&&p.car.type!==type){releaseCar(p.car.group);p.car=null;p.carPose=null;}
+    if(!p.car){p.car={...createVehicleModel(type),type,modelId:null};scene.add(p.car.group);}
     const car=p.car,wanted=p.target.carModel||null;
-    if(!wanted&&car.modelId){releaseCar(car.group);p.car={...createVehicleModel('car'),modelId:null};scene.add(p.car.group);return;}
+    if(!wanted&&car.modelId){releaseCar(car.group);p.car={...createVehicleModel(type),type,modelId:null};scene.add(p.car.group);return;}
     if(wanted!==car.modelId&&!p.carLoading&&loading<2&&performance.now()>(p.carRetry||0)){
       p.carLoading=true;loading++;loader.loadAsync('/api/vehicle/'+encodeURIComponent(wanted)+'.glb').then(gltf=>{
         if(peers.get(id)!==p||p.car!==car||p.target.carModel!==wanted){releaseCar(gltf.scene);return;}
-        releaseCar(car.group);Object.assign(car,prepareCarModel(gltf.scene),{modelId:wanted});scene.add(car.group);
+        releaseCar(car.group);Object.assign(car,prepareCarModel(gltf.scene,type),{modelId:wanted});scene.add(car.group);
       }).catch(()=>{p.carRetry=performance.now()+15000;}).finally(()=>{p.carLoading=false;loading--;});
     }
-    p.carPose=p.carPose?blendPose(p.carPose,target,1-Math.exp(-14*dt)):{...target};const pose=p.carPose;car.group.position.set(pose.x-o.x*70,pose.y,pose.z-o.z*70);car.group.rotation.y=pose.yaw;car.group.traverse(mesh=>{mesh.castShadow=false;});
+    p.carPose=p.carPose?blendPose(p.carPose,target,1-Math.exp(-14*dt)):{...target};const pose=p.carPose;car.group.position.set(pose.x-o.x*70,pose.y,pose.z-o.z*70);car.group.rotation.set(pose.pitch||0,pose.yaw,0,'YXZ');car.group.traverse(mesh=>{mesh.castShadow=false;});
+    const propeller=car.group.getObjectByName('propeller');if(propeller)propeller.rotation.z=target.phase*8;
     for(const wheel of car.wheels){wheel.spin.rotation.x=-target.phase/(1.4*wheel.radius);wheel.pivot.rotation.y=wheel.front?target.steer:0;}
   }
   function stop(){send();saveGuest();onDisconnect?.();stopped=true;welcomed=false;health?.dispose();connection++;clearTimeout(retry);clearInterval(timer);socket?.close();clear();}
   function start(){stopped=false;connect();timer=setInterval(send,100);}
   window.addEventListener('pagehide',stop);window.addEventListener('pageshow',()=>{if(stopped)start();});start();
   document.addEventListener('visibilitychange',()=>{if(document.hidden){send();saveGuest();}});
-  return {get ready(){return welcomed;},get ride(){return ride;},enterRide(owner){if(ride||(ridePending&&performance.now()-ridePending<1000))return;if(!welcomed||socket?.readyState!==WebSocket.OPEN)return onError('请等待连接恢复');ridePending=performance.now();socket.send(JSON.stringify({type:'ride-enter',owner}));},exitRide(){if(ride&&socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ride-exit'}));},rideTargets(){return Array.from(peers,([id,p])=>p.car&&p.target.personalCar&&(p.target.carSeats?.length??2)>1?{root:p.car.group,node:p.car.group,position:[0,.65,0],yaw:0,rideOwner:id}:null).filter(Boolean);},setIdentity(value){if(identity===value)return;send();saveGuest();onDisconnect?.();health?.dispose();welcomed=false;identity=value;restoredIdentity=undefined;lastPose=null;guestPose=null;connection++;clearTimeout(retry);socket?.close();clear();connect();},
+  return {get ready(){return welcomed;},get ride(){return ride;},enterRide(owner){if(ride||(ridePending&&performance.now()-ridePending<1000))return;if(!welcomed||socket?.readyState!==WebSocket.OPEN)return onError('请等待连接恢复');ridePending=performance.now();socket.send(JSON.stringify({type:'ride-enter',owner}));},exitRide(){if(ride&&socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ride-exit'}));},rideTargets(){return Array.from(peers,([id,p])=>p.car&&p.target.personalCar&&(p.target.carSeats?.length??2)>1?{root:p.car.group,node:p.car.group,position:[0,.65,0],range:p.target.personalCar.type==='plane'?10:p.target.personalCar.type==='boat'?8:3.2,yaw:0,rideOwner:id}:null).filter(Boolean);},setIdentity(value){if(identity===value)return;send();saveGuest();onDisconnect?.();health?.dispose();welcomed=false;identity=value;restoredIdentity=undefined;lastPose=null;guestPose=null;connection++;clearTimeout(retry);socket?.close();clear();connect();},
     update(pose,dt){lastPose=pose;lastUpdate=performance.now();if(welcomed&&identity===null&&pose.active){guestPose=pose;if(lastUpdate-lastGuestSave>2000){lastGuestSave=lastUpdate;saveGuest();}}const o=origin();let index=0;
       for(const [id,p] of peers){
         if(index++<8)loadModel(id,p);
@@ -90,7 +92,7 @@ export function createMultiplayer(scene,{origin,onError,onRestore,onDisconnect,o
         p.label.position.copy(position).add(new T.Vector3(0,1.95,0));const distance=Math.hypot(s.x-pose.x,s.z-pose.z);p.label.visible=s.active&&distance<90;p.label.material.opacity=Math.min(1,Math.max(0,(90-distance)/20));
         const remoteType=s.personalCar?.driving?null:s.vehicleType;
         if(p.vehicle?.type!==remoteType){if(p.vehicle)release(p.vehicle.group);p.vehicle=remoteType?{...createVehicleModel(remoteType),type:remoteType}:null;if(p.vehicle){p.vehicle.group.traverse(o=>{o.castShadow=false;});scene.add(p.vehicle.group);}}
-        if(p.vehicle){const v=p.vehicle,offset=s.vehicleType==='bike'?.35:0;v.group.position.set(position.x-Math.sin(s.yaw)*offset,position.y-(s.vehicleType==='bike'?.24:-.2),position.z-Math.cos(s.yaw)*offset);v.group.rotation.y=s.yaw;for(const w of v.wheels)w.spin.rotation.x=-s.crankPhase/(1.4*w.radius);v.pedals.forEach((part,i)=>{const phase=s.crankPhase+i*Math.PI;part.position.y=.5+.17*Math.sin(phase);part.position.z=.05+.17*Math.cos(phase);});}
+        if(p.vehicle){const v=p.vehicle,offset=s.vehicleType==='bike'?.35:0;v.group.position.set(position.x-Math.sin(s.yaw)*offset,position.y-(s.vehicleType==='bike'?.24:-.2),position.z-Math.cos(s.yaw)*offset);if(s.vehicleType==='car'){v.group.position.x+=.35*Math.cos(s.yaw);v.group.position.y=position.y+.22;v.group.position.z-=.35*Math.sin(s.yaw);}v.group.rotation.y=s.yaw;for(const w of v.wheels)w.spin.rotation.x=-s.crankPhase/(1.4*w.radius);v.pedals.forEach((part,i)=>{const phase=s.crankPhase+i*Math.PI;part.position.y=.5+.17*Math.sin(phase);part.position.z=.05+.17*Math.cos(phase);});}
       }
     },get mapPlayers(){return Array.from(peers,([id,p])=>({id,name:p.name,x:p.pose.x,z:p.pose.z,active:p.pose.active})).filter(p=>p.active&&Number.isFinite(p.x)&&Number.isFinite(p.z));},dispose:stop};
 }

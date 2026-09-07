@@ -1,6 +1,6 @@
 ---
 name: openworld-builder
-description: 为 openworld 玩家制作符合真实领地边界的建筑、绑骨角色或个人载具 GLB，读取建模规则，使用随附 CLI 登录、上传模型和提交审核。用于地皮建造、替换角色、自定义小汽车、上传或审核提交，不用于修改世界生成算法。
+description: 为 openworld 玩家制作符合真实领地边界的建筑、绑骨角色或个人载具 GLB，读取建模规则，使用随附 CLI 登录、上传模型和提交审核。用于地皮建造、替换角色、自定义汽车、飞机或船、上传或审核提交，不用于修改世界生成算法。
 ---
 
 # openworld Builder
@@ -29,7 +29,7 @@ Token login remains an explicit fallback with `login --token` using `OPENWORLD_G
 
 ## Build
 
-For a personal vehicle, read the vehicle contract in [references/model-rules.md](references/model-rules.md#vehicles), including the 1/2/4-seat layout. Model real space for the declared occupants, export seat coordinates and inspect headroom, legroom, cockpit visibility and entry/exit. No plot is needed: vehicles use the small-car class and `vehicle set FILE.glb`. Do not use the building submission flow or avatar rigging requirements for cars.
+For a personal vehicle, read the vehicle contract in [references/model-rules.md](references/model-rules.md#vehicles), including the 1/2/4-seat layout. Model real space for the declared occupants, export seat coordinates and inspect headroom, legroom, cockpit visibility and entry/exit. No plot is needed. Choose `--category car|plane|boat` with `vehicle set FILE.glb`; each category has its own saved model and dimensions. Do not use the building submission flow or avatar rigging requirements for cars.
 
 For character creation, rigging is mandatory: deliver a genuinely skinned humanoid model with usable joint weights, and verify idle, walking/running, sitting and cycling movement against the default character’s behavior. Static geometry, named body groups or an unweighted armature do not satisfy this requirement. Read the avatar section for the supported animation contract. Do not silently downgrade a requested character to a static upload to bypass validation.
 
