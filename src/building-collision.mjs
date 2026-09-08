@@ -1,4 +1,4 @@
-import {Vector3} from 'three';
+import {Vector3,Ray} from 'three';
 import {isMovingBuildingMesh} from './building-motion.mjs';
 
 const CELL=4,STEP=.8;
@@ -18,6 +18,10 @@ export function createBuildingCollision(object){
   });
   function candidates(x,z,r=0){const result=new Set();for(let bx=Math.floor((x-r)/CELL);bx<=Math.floor((x+r)/CELL);bx++)for(let bz=Math.floor((z-r)/CELL);bz<=Math.floor((z+r)/CELL);bz++)for(const t of bins.get(bx+','+bz)||[])result.add(t);return result;}
   return {
+    wall(position,direction,reach=.85){
+      const start=position.clone().sub(object.position),dir=direction.clone();dir.y=0;if(dir.lengthSq()<1e-8)return null;dir.normalize();const ray=new Ray(start,dir),point=new Vector3();let best=null;
+      for(const [a,b,c] of candidates(start.x,start.z,reach)){const normal=new Vector3().subVectors(b,a).cross(new Vector3().subVectors(c,a)).normalize();if(Math.abs(normal.y)>.25||!ray.intersectTriangle(a,b,c,false,point))continue;const distance=point.distanceTo(start);if(distance>reach||best&&distance>=best.distance)continue;normal.y=0;normal.normalize();if(normal.dot(dir)>0)normal.negate();best={point:point.clone().add(object.position),normal,distance};}return best;
+    },
     surface(x,z,maxHeight=Infinity){
       x-=object.position.x;z-=object.position.z;const limit=maxHeight-object.position.y,p={x,z};let height=-Infinity;
       for(const [a,b,c] of candidates(x,z)){const den=cross(a,b,c);if(Math.abs(den)<1e-8)continue;
