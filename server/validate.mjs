@@ -1,6 +1,7 @@
 import {Worker,isMainThread,parentPort,workerData} from 'node:worker_threads';
 import {RULES,fail} from './store.mjs';
 import {containsPolygon} from '../shared/polygon-land.mjs';
+import {validateBuildingMotion} from './building-motion.mjs';
 
 export async function validateModel(bytes,plot=null,{avatar=false,vehicle=false}={}){
   if(!Buffer.isBuffer(bytes)||bytes.length<28||bytes.length>RULES.maxBytes||bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(4)!==2||bytes.readUInt32LE(8)!==bytes.length)fail(400,'请上传不超过 12 MB 的有效 GLB 2.0 文件');
@@ -42,6 +43,7 @@ if(!isMainThread){
     }});
     const bounds=getBounds(scene),size=bounds.max.map((v,i)=>v-bounds.min[i]);
     if(!triangles||size.some(v=>!Number.isFinite(v))||Math.max(...size)<.01)fail(400,'模型为空或尺寸无效');
+    validateBuildingMotion(scene,bounds,plot,{avatar,vehicle:workerData.vehicle});
     const width=plot?.width||RULES.width,depth=plot?.depth||RULES.depth;
     if(size[0]>width+.001||size[2]>depth+.001)fail(400,`建筑尺寸 ${size.map(v=>v.toFixed(2)).join(' × ')} 米，超过宽 ${width} / 深 ${depth} 米限制`);
     if(plot?.polygon){const poly=plot.polygon.map(([x,z])=>[x-plot.cx,z-plot.cz]),cx=(bounds.min[0]+bounds.max[0])/2,cz=(bounds.min[2]+bounds.max[2])/2;

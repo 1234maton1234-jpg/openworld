@@ -1,6 +1,7 @@
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {createBuildingMotion} from './building-motion.mjs';
 
 const $=s=>document.querySelector(s),labels={pending:'待审核',published:'已通过',rejected:'已退回',superseded:'历史版本'};
 let csrf='',status='pending',offset=0,rows=[],selected=null,ready=false,busy=false,revision=0,listRevision=0,viewer;
@@ -17,13 +18,13 @@ function createViewer(){
   const canvas=$('#preview'),renderer=new T.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.toneMapping=T.ACESFilmicToneMapping;
   const scene=new T.Scene();scene.background=new T.Color('#e9edf2');scene.add(new T.HemisphereLight('#ffffff','#8c99b0',2.4));const sun=new T.DirectionalLight('#fff6e9',3);sun.position.set(20,30,20);scene.add(sun);
   const camera=new T.PerspectiveCamera(42,1,.01,1000),controls=new OrbitControls(camera,canvas),loader=new GLTFLoader();controls.enableDamping=true;
-  let root,span=1,loadRevision=0;
+  let root,motion,span=1,loadRevision=0;
   function dispose(object){if(!object)return;const resources=new Set();object.traverse(o=>{if(o.geometry)resources.add(o.geometry);for(const m of o.material?(Array.isArray(o.material)?o.material:[o.material]):[]){resources.add(m);for(const v of Object.values(m))if(v?.isTexture)resources.add(v);}});object.removeFromParent();for(const r of resources)r.dispose();}
-  function clear(){loadRevision++;dispose(root);root=null;}
+  function clear(){loadRevision++;dispose(root);root=null;motion=null;}
   function reset(){const distance=span*1.5/Math.min(camera.aspect,1);camera.position.set(distance,distance*.7,distance);camera.near=Math.max(.01,span/1000);camera.far=Math.max(1000,distance*10);camera.updateProjectionMatrix();controls.target.set(0,0,0);controls.maxDistance=distance*5;controls.update();}
   const resize=new ResizeObserver(()=>{const {width,height}=canvas.getBoundingClientRect();if(!width||!height)return;renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();});resize.observe(canvas);
-  renderer.setAnimationLoop(()=>{if(document.hidden)return;controls.update();renderer.render(scene,camera);});
-  return {clear,reset,async load(url){clear();const token=loadRevision,gltf=await loader.loadAsync(url);if(token!==loadRevision){dispose(gltf.scene);return false;}root=gltf.scene;const box=new T.Box3().setFromObject(root),size=box.getSize(new T.Vector3());root.position.sub(box.getCenter(new T.Vector3()));span=Math.max(size.x,size.y,size.z,1);scene.add(root);reset();return true;}};
+  renderer.setAnimationLoop(()=>{if(document.hidden)return;motion?.update(Date.now()/1000);controls.update();renderer.render(scene,camera);});
+  return {clear,reset,async load(url){clear();const token=loadRevision,gltf=await loader.loadAsync(url);if(token!==loadRevision){dispose(gltf.scene);return false;}root=gltf.scene;motion=createBuildingMotion(root);const box=new T.Box3().setFromObject(root),size=box.getSize(new T.Vector3());root.position.sub(box.getCenter(new T.Vector3()));span=Math.max(size.x,size.y,size.z,1);scene.add(root);reset();return true;}};
 }
 function clearSelection(){revision++;selected=null;ready=false;viewer?.clear();$('#details').hidden=true;$('#preview-status').hidden=false;$('#preview-status').textContent='选择一份提交，开始查看';buttons();}
 function renderList(){

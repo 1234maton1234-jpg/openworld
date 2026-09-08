@@ -1,4 +1,5 @@
 import {Vector3} from 'three';
+import {isMovingBuildingMesh} from './building-motion.mjs';
 
 const CELL=4,STEP=.8;
 const cross=(a,b,c)=>(b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x);
@@ -9,7 +10,7 @@ export function createBuildingCollision(object){
   object.updateWorldMatrix(true,true);
   const offset=object.position.clone(),bins=new Map();
   object.traverse(mesh=>{
-    if(!mesh.isMesh)return;const g=mesh.geometry,pos=g.attributes.position,index=g.index,count=index?.count??pos.count;
+    if(!mesh.isMesh||isMovingBuildingMesh(mesh))return;const g=mesh.geometry,pos=g.attributes.position,index=g.index,count=index?.count??pos.count;
     for(let i=0;i<count;i+=3){const triangle=[];for(let j=0;j<3;j++)triangle.push(new Vector3().fromBufferAttribute(pos,index?index.getX(i+j):i+j).applyMatrix4(mesh.matrixWorld).sub(offset));
       const xs=triangle.map(p=>p.x),zs=triangle.map(p=>p.z);
       for(let x=Math.floor(Math.min(...xs)/CELL);x<=Math.floor(Math.max(...xs)/CELL);x++)for(let z=Math.floor(Math.min(...zs)/CELL);z<=Math.floor(Math.max(...zs)/CELL);z++){const key=x+','+z;if(!bins.has(key))bins.set(key,[]);bins.get(key).push(triangle);}
