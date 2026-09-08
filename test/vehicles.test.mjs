@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import {driveStep,VEHICLES,createVehicles} from '../src/vehicles.mjs';
 import {Scene,PerspectiveCamera} from 'three';
 
+test('land vehicles cross sea level and allow exiting below water while retaining solid collisions',()=>{
+  for(const index of [0,1]){
+    let blocked=false;const system=createVehicles(new Scene(),{surface:(x,z)=>.55+(z-42)*.02,obstacle:()=>blocked,origin:()=>({x:0,z:0})}),camera=new PerspectiveCamera();
+    system.update(.01,new Set(),true,camera);const v=system.targets()[index].vehicle;system.enter(v);
+    for(let i=0;i<160;i++)system.update(.05,new Set(['KeyW']),true,camera);
+    assert.ok(v.y<0);assert.ok(v.speed>0);
+    blocked=true;system.update(.05,new Set(['KeyW']),true,camera);assert.equal(v.speed,0);assert.equal(system.exit(),null);
+    blocked=false;assert.ok(system.exit());
+  }
+});
+
 test('exited cars coast without throttle, roll wheels and stop at obstacles',()=>{
   let blocked=false;const system=createVehicles(new Scene(),{surface:()=>4.3,obstacle:()=>blocked,origin:()=>({x:0,z:0})}),camera=new PerspectiveCamera();
   system.update(.01,new Set(),true,camera);const car=system.targets()[1].vehicle;system.enter(car);car.speed=8;assert.ok(system.exit());assert.equal(car.speed,8);
@@ -44,6 +55,17 @@ test('car handling is consistent across 30 and 60 fps',()=>{
   const run=dt=>{const v={type:'car',x:0,z:0,speed:0,heading:0};for(let t=0;t<120;t++)driveStep(v,{forward:true,left:t*dt>1},dt,()=>true);return v;};
   const a=run(1/60),b={type:'car',x:0,z:0,speed:0,heading:0};for(let i=0;i<60;i++)driveStep(b,{forward:true,left:i/30>1},1/30,()=>true);
   assert.ok(Math.hypot(a.x-b.x,a.z-b.z)<.2);assert.ok(Math.abs(a.speed-b.speed)<.01);
+});
+
+test('high speed cornering stays stable and handbrake preserves momentum then recovers grip',()=>{
+  const fast={type:'car',x:0,z:0,speed:30,heading:0};
+  for(let i=0;i<120;i++)driveStep(fast,{forward:true,left:true},1/120,()=>true);
+  assert.ok(Math.abs(fast.yawRate*fast.speed)<=10);
+  const drift={type:'car',x:0,z:0,speed:20,heading:0};
+  for(let i=0;i<120;i++)driveStep(drift,{left:true,handbrake:true},1/120,()=>true);
+  assert.ok(drift.speed>16);assert.ok(Math.abs(drift.heading-drift.travelHeading)>.15);
+  for(let i=0;i<240;i++)driveStep(drift,{forward:true},1/120,()=>true);
+  assert.ok(Math.abs(drift.heading-drift.travelHeading)<.02);assert.ok(Math.abs(drift.yawRate)<.01);
 });
 test('vehicle targets rebase and unsafe dismounts are refused',()=>{
   let blocked=false;const o={x:0,z:0},system=createVehicles(new Scene(),{surface:()=>4.3,obstacle:()=>blocked,origin:()=>o}),camera=new PerspectiveCamera();

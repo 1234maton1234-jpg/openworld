@@ -3,13 +3,13 @@ import {allowedOrigin} from './origins.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {playerPose,PLAYER_RADIUS,PLAYER_LIMIT} from '../shared/player-state.mjs';
 import {createCarRides} from './car-rides.mjs';
-import {carSeats} from '../shared/car-seats.mjs';
+import {carSeats,stockCarSeats} from '../shared/car-seats.mjs';
 import {createPlayerPositions} from './player-position.mjs';
 
 export function installMultiplayer(server,store,config){
   const wss=new WebSocketServer({noServer:true,maxPayload:1024,perMessageDeflate:false}),peers=new Map(),pending=new Set();let closed=false;
   const rides=createCarRides(peers);
-  function vehicleSeats(user,type='car'){try{return carSeats(JSON.parse((type==='car'?user?.vehicleMetrics:user?.models?.[type]?.metrics)||'{}').vehicleSeats,type);}catch{return carSeats();}}
+  function vehicleSeats(user,type='car'){if(type==='car'&&!user?.vehicle)return stockCarSeats();try{return carSeats(JSON.parse((type==='car'?user?.vehicleMetrics:user?.models?.[type]?.metrics)||'{}').vehicleSeats,type);}catch{return carSeats();}}
   function applyVehicle(peer,user){const type=peer.pose?.personalCar?.type||'car';peer.models=user?.models||{};peer.vehicle=type==='car'?user?.vehicle||null:peer.models[type]?.id||null;peer.seats=vehicleSeats(user,type);peer.vehicleUser=user;}
   function selectVehicle(peer){applyVehicle(peer,peer.vehicleUser);}
   const positions=createPlayerPositions(store.db),writes=new Map();

@@ -5,9 +5,34 @@ import {plotPolygon} from '../shared/polygon-land.mjs';
 
 export function createWorldMap(world){
   let riverNames=[];
-  const mini=document.createElement('button');mini.id='minimap';mini.type='button';mini.setAttribute('aria-label','打开世界地图（M）');mini.innerHTML='<canvas aria-label="附近地图"></canvas><span class="map-north">N ↑</span><span class="map-caption">OPENWORLD <kbd>M</kbd></span>';document.body.append(mini);
-  const dialog=document.createElement('dialog');dialog.id='world-map';dialog.setAttribute('aria-label','世界地图');dialog.innerHTML='<div class="map-heading"><div class="map-brand"><span class="map-monogram">OW</span><div><small>OPENWORLD</small><h2>世界地图</h2></div></div><span class="map-mode">探索 / MAP</span><button data-close aria-label="关闭地图">返回游戏 <kbd>Esc</kbd></button></div><div class="map-stage"><canvas aria-label="世界地图，可拖动和缩放"></canvas><span class="map-north">N<br>↑</span><div class="map-tools"><button data-fit>全域</button><button data-center aria-label="定位当前位置">◎</button><span></span><button data-minus aria-label="缩小地图">−</button><button data-plus aria-label="放大地图">＋</button></div><aside class="map-directory" aria-label="地图地点"><div class="map-directory-heading"><small>DISCOVER</small><h3>地点与标记</h3><p>选择地点，在地图上定位</p></div><div class="map-filters"><button data-layer="plots" aria-pressed="true">领地</button><button data-layer="bridges" aria-pressed="true">桥梁</button><button data-layer="rivers" aria-pressed="true">河流</button><button data-layer="players" aria-pressed="true" title="显示附近玩家（同时控制小地图）">角色</button></div><div class="map-place-list"></div><div class="map-directory-note"><span class="map-live-dot"></span> 当前已载入区域<br><small>放大地图可查看名称</small></div></aside></div><div class="map-footer"><span data-scale></span><span><kbd>拖动</kbd> 平移 <kbd>滚轮</kbd> 缩放 <kbd>M</kbd> 返回</span></div>';document.body.append(dialog);
+  const mini=document.createElement('button');mini.id='minimap';mini.type='button';mini.setAttribute('aria-label','打开世界地图（M）');mini.innerHTML='<canvas aria-label="附近地图"></canvas><span class="map-north">N ↑</span><span class="mini-route" hidden></span><span class="map-caption">OPENWORLD <kbd>M</kbd></span>';document.body.append(mini);
+  const dialog=document.createElement('dialog');dialog.id='world-map';dialog.setAttribute('aria-label','世界地图');dialog.innerHTML='<div class="map-heading"><div class="map-brand"><span class="map-monogram">OW</span><div><small>OPENWORLD</small><h2>世界地图</h2></div></div><span class="map-mode">探索 / MAP</span><button data-close aria-label="关闭地图">返回游戏 <kbd>Esc</kbd></button></div><div class="map-stage"><canvas aria-label="世界地图，单击设置导航点，可拖动和缩放"></canvas><span class="map-north">N<br>↑</span><div class="map-tools"><button data-fit>全域</button><button data-center aria-label="定位当前位置">◎</button><span></span><button data-minus aria-label="缩小地图">−</button><button data-plus aria-label="放大地图">＋</button></div><aside class="map-directory" aria-label="地图地点"><div class="map-directory-heading"><small>DISCOVER</small><h3>地点与标记</h3><p>选择地点，在地图上定位</p></div><div class="map-filters"><button data-layer="plots" aria-pressed="true">领地</button><button data-layer="bridges" aria-pressed="true">桥梁</button><button data-layer="rivers" aria-pressed="true">河流</button><button data-layer="players" aria-pressed="true" title="显示附近玩家（同时控制小地图）">角色</button></div><div class="map-place-list"></div><div class="map-directory-note"><span class="map-live-dot"></span> 当前已载入区域<br><small>放大地图可查看名称</small></div></aside></div><div class="map-footer"><span data-scale></span><div class="map-navigation"><span data-route-status role="status">单击地图设置导航点</span><button data-clear-route hidden>清除导航</button></div><span><kbd>单击</kbd> 导航 <kbd>拖动</kbd> 平移 <kbd>滚轮</kbd> 缩放 <kbd>M</kbd> 返回</span></div>';document.body.append(dialog);
   const small=mini.querySelector('canvas'),large=dialog.querySelector('canvas'),view={x:0,z:0,scale:.18};let plan=null,rows=[],atlas=null,bounds=null,drag=null,waterJob=0;
+  let destination=null,route=null,routeWorker=null,routeRequest=0,routeBusy=false,routeTime=0,routeOrigin=null,routeTimer=null,arrived=false;
+  const routeStatus=dialog.querySelector('[data-route-status]'),clearRoute=dialog.querySelector('[data-clear-route]'),miniRoute=mini.querySelector('.mini-route');
+  const meters=n=>n>=1000?(n/1000).toFixed(1)+' km':Math.round(n)+' m';
+  function routeMessage(text){world.setNavigationRoute?.(route?.status==='ok'?route.points:[]);routeStatus.textContent=text;miniRoute.textContent=route?.status==='ok'?meters(route.distance):text.includes('规划')?'规划中…':text==='已到达导航点'?'已到达':'暂无路线';miniRoute.title=text;miniRoute.hidden=!destination;clearRoute.hidden=!destination;}
+  function worker(){
+    if(routeWorker)return routeWorker;
+    routeWorker=new Worker('/navigation-worker.js',{type:'module'});
+    const failed=()=>{clearTimeout(routeTimer);routeWorker?.terminate();routeWorker=null;routeBusy=false;route=null;routeMessage('导航暂不可用，请重新设置导航点');draw();};
+    routeWorker.onerror=failed;
+    routeWorker.onmessage=({data})=>{if(data.id!==routeRequest)return;clearTimeout(routeTimer);routeBusy=false;if(!destination)return;route=data.result;
+      const messages={'off-road':'目标或当前位置距道路过远','no-roads':'当前区域尚无道路数据',disconnected:'已载入道路不连通',invalid:'导航点无效',error:'导航计算失败'};
+      routeMessage(route.status==='ok'?'道路路线 '+meters(route.distance)+(route.endGap>15?' · 终点距目标 '+meters(route.endGap):''):messages[route.status]||'暂无可用路线');draw();};
+    return routeWorker;
+  }
+  function navigate(force=false){
+    if(!destination||!plan||routeBusy)return;const p=world.mapPose,now=performance.now();
+    if(Math.hypot(p.x-destination.x,p.z-destination.z)<10){if(!arrived){arrived=true;route=null;routeMessage('已到达导航点');}return;}
+    if(arrived){arrived=false;force=true;}
+    if(!force&&(!routeWorker||now-routeTime<1200||routeOrigin&&Math.hypot(p.x-routeOrigin.x,p.z-routeOrigin.z)<12))return;
+    try{const fresh=!routeWorker,w=worker();if(fresh)w.postMessage({type:'roads',roads:plan.roads||[]});routeBusy=true;routeTime=now;routeOrigin={...p};const id=++routeRequest;w.postMessage({type:'route',id,start:p,target:destination});routeTimer=setTimeout(()=>{if(id!==routeRequest)return;w.terminate();routeWorker=null;routeBusy=false;route=null;routeMessage('导航计算超时，请重新设置导航点');draw();},10000);}catch{routeBusy=false;routeMessage('浏览器无法启动导航');}
+  }
+  function setDestination(point){destination=point;arrived=false;route=null;routeOrigin=null;routeRequest++;routeBusy=false;clearTimeout(routeTimer);routeMessage(point?'正在规划道路路线…':'单击地图设置导航点');if(point)navigate(true);draw();}
+  clearRoute.onclick=()=>setDestination(null);
+  window.addEventListener('pagehide',()=>{routeWorker?.terminate();routeWorker=null;clearTimeout(routeTimer);routeBusy=false;});
+  window.addEventListener('pageshow',()=>{if(destination)navigate(true);});
   const layers={plots:true,bridges:true,rivers:true,players:true};
   try{layers.players=localStorage.getItem('openworld:map-players')!=='false';}catch{}
   dialog.querySelector('[data-layer="players"]').setAttribute('aria-pressed',String(layers.players));let selectedPlace=null,placeSignature=null,pendingFit=false;
@@ -23,15 +48,20 @@ export function createWorldMap(world){
   function zoom(factor,x=large.clientWidth/2,y=large.clientHeight/2){Object.assign(view,zoomMap(view,factor,x,y,large.clientWidth,large.clientHeight));draw();}
   dialog.querySelector('[data-plus]').onclick=()=>zoom(1.4);dialog.querySelector('[data-minus]').onclick=()=>zoom(1/1.4);dialog.querySelector('[data-center]').onclick=center;
   large.addEventListener('wheel',e=>{e.preventDefault();const r=large.getBoundingClientRect();zoom(Math.exp(-e.deltaY*.0015),e.clientX-r.left,e.clientY-r.top);},{passive:false});
-  large.addEventListener('pointerdown',e=>{if(e.button!==0)return;drag={id:e.pointerId,x:e.clientX,y:e.clientY};large.setPointerCapture(e.pointerId);});
-  large.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;view.x-=(e.clientX-drag.x)/view.scale;view.z-=(e.clientY-drag.y)/view.scale;drag.x=e.clientX;drag.y=e.clientY;draw();});
-  for(const event of ['pointerup','pointercancel','lostpointercapture'])large.addEventListener(event,()=>drag=null);
+  large.addEventListener('pointerdown',e=>{if(e.button!==0)return;drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};large.setPointerCapture(e.pointerId);});
+  large.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;if(Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)>5)drag.moved=true;if(!drag.moved)return;view.x-=(e.clientX-drag.x)/view.scale;view.z-=(e.clientY-drag.y)/view.scale;drag.x=e.clientX;drag.y=e.clientY;draw();});
+  large.addEventListener('pointerup',e=>{if(!drag||drag.id!==e.pointerId)return;const clicked=!drag.moved;drag=null;if(clicked){const r=large.getBoundingClientRect();setDestination({x:view.x+(e.clientX-r.left-r.width/2)/view.scale,z:view.z+(e.clientY-r.top-r.height/2)/view.scale});}});
+  for(const event of ['pointercancel','lostpointercapture'])large.addEventListener(event,()=>drag=null);
   function render(canvas,v){
     const w=canvas.clientWidth,h=canvas.clientHeight;if(!w||!h)return;const dpr=Math.min(devicePixelRatio,2);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.fillStyle='#181d20';c.fillRect(0,0,w,h);const point=(x,z)=>mapPoint(x,z,v,w,h);
     if(bounds){const [x,y]=point(bounds.x,bounds.z),size=bounds.size*v.scale;c.fillStyle='#272c2d';c.fillRect(x,y,size,size);if(atlas){c.imageSmoothingEnabled=true;c.drawImage(atlas,x,y,size,size);}}
     c.lineCap='round';c.lineJoin='round';
     for(const road of plan?.roads||[]){if(!road.points?.length)continue;c.beginPath();road.points.forEach((p,i)=>{const q=point(p[0],p[2]);i?c.lineTo(...q):c.moveTo(...q);});c.strokeStyle=road.bridge?'#e0e2dc':'#989d9c';c.lineWidth=Math.max(.8,road.width*v.scale*.72);c.stroke();}
     for(const row of layers.plots?rows:[]){const polygon=plotPolygon(row);c.beginPath();polygon.forEach(([x,z],i)=>{const p=point(x,z);i?c.lineTo(...p):c.moveTo(...p);});c.closePath();c.fillStyle=row.published?'#83b5d699':'#d5ad6399';c.fill();const p=point(row.cx,row.cz);c.fillStyle=row.published?'#9dd5ff':'#ecc886';c.fillRect(p[0]-3,p[1]-3,6,6);}
+    if(route?.status==='ok'&&route.points.length){
+      c.beginPath();route.points.forEach((p,i)=>{const q=point(p[0],p[2]);i?c.lineTo(...q):c.moveTo(...q);});c.strokeStyle='#20152de6';c.lineWidth=canvas===small?7:9;c.stroke();c.strokeStyle='#bf8cff';c.lineWidth=canvas===small?3.5:5;c.stroke();
+    }
+    if(destination){const [x,y]=point(destination.x,destination.z);c.save();c.translate(x,y);c.fillStyle='#d7b6ff';c.strokeStyle='#21152c';c.lineWidth=2;c.beginPath();c.moveTo(0,-9);c.lineTo(7,0);c.lineTo(0,9);c.lineTo(-7,0);c.closePath();c.fill();c.stroke();c.restore();}
     const pose=world.mapPose,p=point(pose.x,pose.z),occupied=[[p[0]-14,p[1]-14,p[0]+14,p[1]+14]];
     c.font=`${canvas===small?10:12}px "Microsoft YaHei",sans-serif`;c.textAlign='center';c.textBaseline='middle';
     for(const player of layers.players?world.mapPlayers||[]:[]){
@@ -56,8 +86,8 @@ export function createWorldMap(world){
     if(!plan){c.fillStyle='#cad0cd';c.font='12px sans-serif';c.fillText('正在载入地图…',15,h/2);}else if(bounds&&(v.x<bounds.x||v.x>bounds.x+bounds.size||v.z<bounds.z||v.z>bounds.z+bounds.size)){c.fillStyle='#cad0cd';c.font='14px sans-serif';c.fillText('此区域尚未载入',20,32);}
     if(canvas!==small){c.strokeStyle='#d5dcda';c.lineWidth=2;c.beginPath();c.moveTo(14,h-22);c.lineTo(94,h-22);c.stroke();c.fillStyle='#d5dcda';c.font='10px sans-serif';c.fillText(`${Math.round(80/v.scale)} m`,14,h-28);}
   }
-  function draw(){if(document.hidden)return;render(small,{...world.mapPose,scale:.32});if(dialog.open){render(large,view);const p=world.mapPose;dialog.querySelector('[data-scale]').textContent=`X ${Math.round(p.x)} / Z ${Math.round(p.z)}`;}}
+  function draw(){if(document.hidden)return;navigate();render(small,{...world.mapPose,scale:.32});if(dialog.open){render(large,view);const p=world.mapPose;dialog.querySelector('[data-scale]').textContent=`X ${Math.round(p.x)} / Z ${Math.round(p.z)}`;}}
   setInterval(draw,100);new ResizeObserver(draw).observe(mini);
-  return {setData(values,planning){rows=values;plan=planning;directory();const {x:left,z:top,size}=mapBounds(planning,world.mapPose);if(bounds&&bounds.x===left&&bounds.z===top&&bounds.size===size){draw();return;}atlas=null;riverNames=[];bounds={x:left,z:top,size};if(dialog.open&&pendingFit)fit();const token=++waterJob,area={...bounds},hydro=createWorldHydrology(planning?.hydrology),image=document.createElement('canvas');image.width=image.height=256;const ctx=image.getContext('2d');let row=0;const names=new Map();
+  return {setData(values,planning){rows=values;plan=planning;world.setNavigationRoute?.([]);routeRequest++;routeBusy=false;clearTimeout(routeTimer);route=null;routeOrigin=null;if(destination){try{worker().postMessage({type:'roads',roads:plan?.roads||[]});navigate(true);}catch{routeMessage('浏览器无法启动导航');}}directory();const {x:left,z:top,size}=mapBounds(planning,world.mapPose);if(bounds&&bounds.x===left&&bounds.z===top&&bounds.size===size){draw();return;}atlas=null;riverNames=[];bounds={x:left,z:top,size};if(dialog.open&&pendingFit)fit();const token=++waterJob,area={...bounds},hydro=createWorldHydrology(planning?.hydrology),image=document.createElement('canvas');image.width=image.height=256;const ctx=image.getContext('2d');let row=0;const names=new Map();
     function paint(){if(token!==waterJob)return;for(let end=Math.min(row+8,256);row<end;row++)for(let x=0;x<256;x++){const wx=area.x+(x+.5)*area.size/256,wz=area.z+(row+.5)*area.size/256;ctx.fillStyle=hydro.distance(wx,wz)<14?'#19323e':'#272c2d';ctx.fillRect(x,row,1,1);if(x%12===0&&row%12===0)for(const line of hydro.segments(wx,wz)){const label=riverLabel(line);if(label.x>=area.x&&label.x<=area.x+area.size&&label.z>=area.z&&label.z<=area.z+area.size&&!names.has(label.id))names.set(label.id,label);}}if(row<256)setTimeout(paint,0);else{atlas=image;riverNames=[...names.values()];directory();draw();}}setTimeout(paint,0);draw();}};
 }

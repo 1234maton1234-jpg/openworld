@@ -41,7 +41,7 @@ test('one shared world broadcasts verified identities, proximity and disconnects
     a.ws.close();await wait(()=>b.messages.filter(m=>m.type==='snapshot').at(-1)?.players.length===0);
     const returned=await connect(auth.cookie);await wait(()=>returned.messages.some(m=>m.type==='welcome'));const welcome=returned.messages.find(m=>m.type==='welcome');assert.equal(welcome.position.x,27);assert.equal(welcome.userId,'1001');
     assert.equal(b.messages.find(m=>m.type==='welcome').position,null);
-    send(returned,1000,{personalCar:{x:4,y:4.3,z:48,yaw:0,phase:0,steer:0,driving:false},carModel:'forged'});await wait(()=>b.messages.some(m=>m.players?.some(p=>p.personalCar?.x===4)));const parked=b.messages.filter(m=>m.players?.some(p=>p.personalCar)).at(-1).players.find(p=>p.personalCar);assert.equal(parked.carModel,null);
+    send(returned,1000,{personalCar:{x:4,y:4.3,z:48,yaw:0,phase:0,steer:0,driving:false},carModel:'forged'});await wait(()=>b.messages.some(m=>m.players?.some(p=>p.personalCar?.x===4)));const parked=b.messages.filter(m=>m.players?.some(p=>p.personalCar)).at(-1).players.find(p=>p.personalCar);assert.equal(parked.carModel,null);assert.equal(parked.carSeats.length,4);assert.equal(parked.carSeats[2][2],.6);
     for(const type of ['plane','boat']){
       send(returned,1000,{personalCar:{x:4,y:4.3,z:48,yaw:0,type,pitch:.2,driving:false},carModel:'forged'});
       await wait(()=>b.messages.some(m=>m.players?.some(p=>p.personalCar?.type===type)));

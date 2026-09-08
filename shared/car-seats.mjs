@@ -1,3 +1,4 @@
+export const stockCarSeats=()=>[[-.35,.65,-.4],[.35,.65,-.4],[-.35,.65,.6],[.35,.65,.6]];
 export const DEFAULT_CAR_SEATS=[[-.35,.65,0],[.35,.65,0]];
 import {VEHICLE_TYPES} from './vehicle-types.mjs';
 export function carSeats(value,type='car'){

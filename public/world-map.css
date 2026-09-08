@@ -3,6 +3,7 @@
 #minimap .map-caption{left:50%;right:auto;bottom:12px;transform:translateX(-50%);height:auto;padding:3px 8px;border-radius:10px;font-size:8px;letter-spacing:1px;white-space:nowrap}
 #minimap .map-caption kbd{float:none;margin-left:6px}
 #minimap:focus-visible{outline:2px solid #fff;outline-offset:4px}
+.mini-route{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);max-width:88%;padding:4px 8px;border-radius:10px;background:#20182dda;color:#e2caff;font:10px sans-serif;text-align:center;pointer-events:none}.map-navigation{display:flex;align-items:center;gap:12px;color:#d7b6ff;min-width:0}.map-navigation [data-route-status]{font-size:12px}#world-map [data-clear-route]{padding:5px 10px;border-color:#b98ded55;border-radius:5px;white-space:nowrap}.map-stage canvas{cursor:crosshair}.map-stage canvas:active{cursor:grabbing}@media(max-width:720px){.map-navigation{order:-1;flex-basis:100%;justify-content:space-between}.mini-route{font-size:9px;bottom:32px;padding:3px 6px}}
 #world-map{width:calc(100vw - 40px);height:calc(100dvh - 40px);max-width:none;max-height:none;border:1px solid #ffffff20;border-radius:8px;background:#181d20;box-shadow:0 24px 100px #0008;font-family:"Microsoft YaHei",sans-serif}
 #world-map::backdrop{background:#090d10d9;backdrop-filter:blur(10px)}
 #world-map .map-heading{height:74px;box-sizing:border-box;padding:14px 26px;border-bottom:1px solid #ffffff15;background:#161b1f;gap:24px}

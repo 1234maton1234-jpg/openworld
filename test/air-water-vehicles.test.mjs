@@ -14,7 +14,7 @@ test('boats require water across their footprint and cannot spawn on land',()=>{
   assert.equal(system(()=>4).summon(0,0,0,null,'boat'),false);
   assert.equal(system((x)=>Math.abs(x)<.5?-3:4).summon(0,0,0,null,'boat'),false);
   const water=system(()=>-3);assert.equal(water.summon(0,0,0,null,'boat'),true);assert.equal(water.personal.y,-.35);
-  water.enter(water.personal);assert.equal(water.exit(),null);
+  water.enter(water.personal);const exit=water.exit();assert.ok(exit);assert.equal(exit.y,-1.3);assert.equal(water.active,null);water.enter(water.personal);
   water.update(.05,new Set(['KeyW']),true,new PerspectiveCamera());assert.equal(water.personal.y,-.35);
 });
 test('planes need dry ground, accelerate before climbing, and respect blocked movement',()=>{

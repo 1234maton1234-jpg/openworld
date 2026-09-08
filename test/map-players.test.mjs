@@ -8,8 +8,9 @@ test('player layer controls both maps and restores the saved preference',t=>{
   const canvas=()=>{const calls=[],context=new Proxy({calls,measureText:s=>({width:s.length*7})},{get:(o,k)=>k in o?o[k]:(...args)=>calls.push([k,...args])});contexts.push(context);return {...element(),getContext:()=>context};};
   let dialog,mini,draw;const saved=new Map();
   t.mock.method(globalThis,'setInterval',fn=>{draw=fn;return 1;});
-  const originals=new Map(['document','localStorage','ResizeObserver','devicePixelRatio'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+  const originals=new Map(['window','document','localStorage','ResizeObserver','devicePixelRatio'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
   t.after(()=>{for(const [key,value] of originals)value?Object.defineProperty(globalThis,key,value):delete globalThis[key];});
+  globalThis.window={addEventListener(){}};
   globalThis.devicePixelRatio=1;globalThis.ResizeObserver=class{observe(){}};
   globalThis.localStorage={getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)};
   globalThis.document={hidden:false,body:{append(){}},addEventListener(){},querySelector:()=>null,createElement(tag){
