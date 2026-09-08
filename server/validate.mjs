@@ -43,11 +43,11 @@ if(!isMainThread){
     const bounds=getBounds(scene),size=bounds.max.map((v,i)=>v-bounds.min[i]);
     if(!triangles||size.some(v=>!Number.isFinite(v))||Math.max(...size)<.01)fail(400,'模型为空或尺寸无效');
     const width=plot?.width||RULES.width,depth=plot?.depth||RULES.depth;
-    if(size[0]>width+.001||size[2]>depth+.001||size[1]>RULES.height+.001)fail(400,`建筑尺寸 ${size.map(v=>v.toFixed(2)).join(' × ')} 米，超过宽 ${width} / 高 ${RULES.height} / 深 ${depth} 米限制`);
+    if(size[0]>width+.001||size[2]>depth+.001)fail(400,`建筑尺寸 ${size.map(v=>v.toFixed(2)).join(' × ')} 米，超过宽 ${width} / 深 ${depth} 米限制`);
     if(plot?.polygon){const poly=plot.polygon.map(([x,z])=>[x-plot.cx,z-plot.cz]),cx=(bounds.min[0]+bounds.max[0])/2,cz=(bounds.min[2]+bounds.max[2])/2;
       scene.traverse(node=>{const mesh=node.getMesh();if(!mesh)return;const m=node.getWorldMatrix();for(const primitive of mesh.listPrimitives()){const pos=primitive.getAttribute('POSITION'),indices=primitive.getIndices(),count=indices?.getCount()??pos.getCount();for(let i=0;i<count;i+=3){const triangle=[];for(let j=0;j<3;j++){const [x,y,z]=pos.getElement(indices?indices.getScalar(i+j):i+j,[]);triangle.push([m[0]*x+m[4]*y+m[8]*z+m[12]-cx,m[2]*x+m[6]*y+m[10]*z+m[14]-cz]);}if(!containsPolygon(poly,triangle))fail(400,'建筑超出多边形地皮边界，请按下载的轮廓调整模型');}}});
     }
-    if(bounds.min.some(v=>Math.abs(v)>10000)||bounds.max.some(v=>Math.abs(v)>10000))fail(400,'请将建筑原点移到场景中心附近');
+    if(bounds.min.some((v,i)=>(i!==1||avatar||workerData.vehicle)&&Math.abs(v)>10000)||bounds.max.some((v,i)=>(i!==1||avatar||workerData.vehicle)&&Math.abs(v)>10000))fail(400,'请将建筑原点移到场景中心附近');
     const sharp=(await import('sharp')).default;let pixels=0;
     for(const texture of root.listTextures()){
       if(!['image/png','image/jpeg'].includes(texture.getMimeType()))fail(400,'只支持 PNG / JPEG 贴图');

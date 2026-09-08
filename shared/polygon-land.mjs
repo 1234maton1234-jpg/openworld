@@ -1,4 +1,4 @@
-export const LAND={grid:2,minArea:256,maxArea:4096,maxSpan:96,minEdge:8,minClearance:8,gap:2,height:24};
+export const LAND={grid:2,minArea:256,maxArea:4096,maxSpan:96,minEdge:8,minClearance:8,gap:2,height:null};
 const EPS=1e-7;
 export const edges=p=>p.map((a,i)=>[a,p[(i+1)%p.length]]);
 const orient=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);

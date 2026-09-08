@@ -1,4 +1,4 @@
-export const PLOT=Object.freeze({width:64,depth:64,height:600,cell:70,version:2});
+export const PLOT=Object.freeze({width:64,depth:64,height:null,cell:70,version:2});
 export const TERRAIN=Object.freeze({seed:734921,version:2,water:0,cell:PLOT.cell});
 export const MAX_COORDINATE=Math.floor(2**40/TERRAIN.cell)-32;
 export const validCoordinate=v=>Number.isSafeInteger(v)&&Math.abs(v)<=MAX_COORDINATE;
