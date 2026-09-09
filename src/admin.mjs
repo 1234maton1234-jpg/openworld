@@ -27,6 +27,12 @@ function createViewer(){
   return {clear,reset,async load(url){clear();const token=loadRevision,gltf=await loader.loadAsync(url);if(token!==loadRevision){dispose(gltf.scene);return false;}root=gltf.scene;motion=createBuildingMotion(root);const box=new T.Box3().setFromObject(root),size=box.getSize(new T.Vector3());root.position.sub(box.getCenter(new T.Vector3()));span=Math.max(size.x,size.y,size.z,1);scene.add(root);reset();return true;}};
 }
 function clearSelection(){revision++;selected=null;ready=false;viewer?.clear();$('#details').hidden=true;$('#preview-status').hidden=false;$('#preview-status').textContent='选择一份提交，开始查看';buttons();}
+async function optimizationStatus(id,token,value,attempt=0){
+  try{const response=await fetch('/assets/'+encodeURIComponent(id)+'.glb?manifest=1',{signal:AbortSignal.timeout(15000)});if(token!==revision)return;const data=await response.json();if(!response.ok)throw Error();
+    if(response.status===202){value.textContent='正在生成远景模型…';if(attempt<20)setTimeout(()=>{if(token===revision)void optimizationStatus(id,token,value,attempt+1);},3000);else value.textContent='仍在处理中，重新选择可刷新';}
+    else value.textContent=`已生成 ${data.variants.length} 档 · 远景 ${Number(data.variants.at(-1).triangles).toLocaleString()} 面`;
+  }catch{if(token===revision)value.textContent='优化暂不可用，使用原始模型';}
+}
 function renderList(){
   $('#list').replaceChildren(...rows.map((row,index)=>{const item=text('button','');item.className='item';item.setAttribute('aria-pressed',String(selected?.id===row.id));const number=text('div',String(offset+index+1).padStart(3,'0'));number.className='number';item.append(number,text('strong',row.plot_name||row.title||'未命名领地'),text('small','@'+row.login),text('small',date(row.created)));item.onclick=()=>{if(!busy)select(row);};return item;}));
   if(!rows.length){const empty=text('p',status==='pending'?'暂时没有待审核作品':'暂无相关记录');empty.className='empty';$('#list').append(empty);}
@@ -41,8 +47,10 @@ async function select(row){
   clearSelection();const token=revision;selected=row;renderList();$('#details').hidden=false;$('#plot-name').textContent=row.plot_name||row.title||'未命名领地';$('#status').textContent=labels[row.status];$('#description').textContent=row.plot_description||'作者尚未填写领地介绍。';
   let metrics={};try{metrics=JSON.parse(row.metrics);}catch{}
   const dimensions=Array.isArray(metrics.size)?metrics.size.map(v=>Number(v).toFixed(2)).join(' × ')+' m':'—';
-  $('#metadata').replaceChildren(...[['提交者','@'+row.login],['提交时间',date(row.created)],['模型尺寸',dimensions],['三角面',Number(metrics.triangles||0).toLocaleString()],['地块坐标',row.x+' / '+row.z],['提交编号',row.id]].map(([key,value])=>{const div=text('div','');div.append(text('dt',key),text('dd',value));return div;}));
+  const resources=metrics.resources;
+  $('#metadata').replaceChildren(...[['提交者','@'+row.login],['提交时间',date(row.created)],['模型尺寸',dimensions],['三角面',Number(metrics.triangles||0).toLocaleString()],['材质 / 贴图',resources?`${resources.materials} / ${resources.textures}`:'旧模型未统计'],['贴图显存估算',resources?`${(resources.textureGpuBytesEstimate/1048576).toFixed(1)} MiB`:'—'],['地块坐标',row.x+' / '+row.z],['提交编号',row.id]].map(([key,value])=>{const div=text('div','');div.append(text('dt',key),text('dd',value));return div;}));
   $('#review-form').hidden=row.status!=='pending';$('#review-record').hidden=row.status==='pending';$('#record-text').textContent=`${labels[row.status]} · ${date(row.reviewed)}\n审核人 ID：${row.reviewer||'—'}\n${row.note||'未填写备注'}`;$('#note').value='';$('#preview-status').textContent='正在加载模型…';
+  const optimization=text('div',''),optimizationValue=text('dd','检查中…');optimization.append(text('dt','远景优化'),optimizationValue);$('#metadata').append(optimization);void optimizationStatus(row.id,token,optimizationValue);
   try{viewer??=createViewer();const loaded=await viewer.load('/assets/'+encodeURIComponent(row.id)+'.glb');if(token!==revision||!loaded)return;ready=true;$('#preview-status').hidden=true;buttons();}
   catch(error){if(token!==revision)return;$('#preview-status').textContent='模型加载失败，请重新选择作品重试';message('模型预览失败，审核操作已禁用。',true);buttons();}
 }

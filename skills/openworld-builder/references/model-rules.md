@@ -6,7 +6,7 @@ Building limits and current upload behavior are verified against the project val
 
 - Units: meters; Y up; horizontal polygon coordinates are [X,Z]. Local boundary equals world polygon minus [plot.cx, plot.cz]. Older rectangular plots use width/depth around that center.
 - The server centers the complete transformed model bounding box in X/Z on the plot center and places its lowest Y on the foundation. Moving the GLB root is not a way to choose a different position on the plot. Check every triangle after subtracting the model bounds' horizontal center. Roofs and accessories count toward both bounds and containment.
-- Current limit: height 600 m; width/depth from the owned plot, not a universal 64 m square. Every projected triangle must fit the actual polygon, not merely its bounding rectangle. Avoid adding a base that extends beyond that polygon.
+- Height follows live rules (`height: null` means no height cap); width/depth come from the owned plot, not a universal 64 m square. Every projected triangle must fit the actual polygon, not merely its bounding rectangle. Avoid adding a base that extends beyond that polygon.
 - Land ownership, public roads, water and other players' plots are not editable model space. The 2 m separation between claims is handled by the server; do not subtract an additional 2 m from the downloaded boundary as an invented requirement.
 
 ## Seat compatibility
@@ -33,11 +33,14 @@ Export a separate empty node for each sitting place, parented under the building
 ## GLB resources
 
 - GLB 2.0, one scene, triangle primitives, ordinary PBR materials.
-- Maximum 12 MiB, 100000 triangles, 512 nodes, 200 rendered primitives, 16 textures. Accessors at most 300000 elements.
+- All categories: maximum 12 MiB, 100000 rendered triangles, 300000 rendered vertices, 512 nodes, 200 rendered primitives, 64 materials and 16 textures. Accessors at most 300000 elements; total decoded accessor allocation, including sparse data and animation, at most 32 MiB. At most 32 animation clips; avatars allow 4 skins and 128 joints per skin.
 - No extensions (including Draco, meshopt and material extensions), external URIs or external buffers. Buildings must not contain skins, animations or morph targets. Avatar upload accepts skins and animation clips under the contract below.
 - Embedded PNG/JPEG only, maximum 2048×2048 each, total at most 16×1024×1024 pixels. No animated images.
 - Finite coordinates and valid glTF required. Keep bounds within ±10000 m of the model origin; an empty or microscopic model is rejected.
 - Prefer merged static geometry and reused materials where appropriate; preserve geometry needed for the requested silhouette and gameplay access.
+- The server generates visual LOD derivatives on demand, targeting 50% and 20% geometry with 1024/512 px textures. These are targets, not guaranteed ratios. Upload the finished original; automatic optimization does not bypass upload limits or replace authoring quality checks. Preserve silhouette with geometry and use textures for small details.
+- Preserve node hierarchy, transforms, extras, avatar skin bindings/animation, seat markers and separately named moving vehicle parts. Never merge wheels into the body merely to reduce draws. Visual LOD does not replace original building collision or interaction data. Test animation, wheel rotation and seating after export, at near and far viewing distances.
+- The client prioritizes nearby models within aggregate triangle, texture and draw budgets. A model passing upload validation can still be reduced or temporarily hidden in a crowded scene. Texture memory estimates include RGBA8 mipmaps and are not measured total GPU memory.
 
 ## Lighting tiers
 

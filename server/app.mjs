@@ -1,7 +1,9 @@
 import express from 'express';
+import {serveModel,removeModel} from './model-variants.mjs';
+import {localAssetStorage,r2AssetStorage} from './asset-storage.mjs';
 import {allowedOrigin,normalizeOrigins} from './origins.mjs';
 import {installTeleports} from './teleports.mjs';
-import {mkdirSync,writeFileSync,unlinkSync} from 'node:fs';
+import {mkdirSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
@@ -16,7 +18,8 @@ export async function createApp(config){
   if(config.production&&!/^postgres(?:ql)?:\/\//.test(config.databaseUrl||''))throw new Error('Production requires a PostgreSQL DATABASE_URL.');
   config.url=new URL(config.url).origin;
   config.allowedOrigins=normalizeOrigins(config.allowedOrigins,config.production);
-  const data=resolve(config.dataDir),uploads=join(data,'uploads');mkdirSync(uploads,{recursive:true});
+  const data=resolve(config.dataDir),uploadDirectory=join(data,'uploads');mkdirSync(uploadDirectory,{recursive:true});
+  const uploads=config.assetStore||(config.r2?r2AssetStorage(config.r2):localAssetStorage(uploadDirectory));
   const store=(await createStore(config.databaseUrl||join(data,'town.sqlite'))),app=express();app.disable('x-powered-by');
   app.use((req,res,next)=>{
     res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
@@ -35,7 +38,7 @@ export async function createApp(config){
   });
   app.delete('/api/plots/mine',requireUser,async (req,res)=>{
     const ids=(await store.deletePlot(req.user.id));
-    for(const id of ids)try{unlinkSync(join(uploads,id+'.glb'));}catch(error){if(error.code!=='ENOENT')console.error('Plot asset cleanup failed:',error.code);}
+    for(const id of ids)try{await removeModel(uploads,id);}catch(error){if(error.code!=='ENOENT')console.error('Plot asset cleanup failed:',error.code);}
     res.json({ok:true});
   });
   app.post('/api/plots/check',requireUser,async (req,res)=>{(await store.rate('land-check:'+req.user.id,60));res.json((await store.checkLand(req.body?.polygon)));});
@@ -50,8 +53,8 @@ export async function createApp(config){
     try{
       const title=typeof req.query.title==='string'?req.query.title.trim():'';if(!title||title.length>60)fail(400,'建筑名称需为 1–60 字');
       const metrics=await validateModel(req.body,(await store.getPlot(req.user.id))),id=randomUUID();if(req.plotRevision!==store.plotRevision(req.user.id))fail(409,'地皮已删除，请重新上传');(await store.canSubmit(req.user.id));
-      writeFileSync(join(uploads,id+'.glb'),req.body,{flag:'wx'});
-      try{res.status(201).json((await store.submit(req.user.id,title,metrics,id,req.plotRevision)));}catch(error){unlinkSync(join(uploads,id+'.glb'));throw error;}
+      await uploads.put(id+'.glb',req.body,{exclusive:true});
+      try{res.status(201).json((await store.submit(req.user.id,title,metrics,id,req.plotRevision)));}catch(error){await removeModel(uploads,id);throw error;}
     }finally{req.releaseValidation();}
   });
   app.get('/api/admin/submissions',requireAdmin,async (req,res)=>{
@@ -68,7 +71,7 @@ export async function createApp(config){
     const row=(await store.getSubmission(req.params.id));if(!row)fail(404,'模型不存在');
     const published=(await store.db.prepare('SELECT 1 FROM plots WHERE published=?').get(row.id));
     if(!published&&req.user?.id!==row.owner&&!req.user?.admin)fail(404,'模型不存在');
-    res.type('model/gltf-binary').sendFile(join(uploads,row.id+'.glb'));
+    await serveModel(req,res,uploads,row.id,{publicAsset:!!published});
   });
   app.get('/health',async(req,res)=>{await store.db.prepare('SELECT 1').get();return res.set('Cache-Control','no-store').json({ok:true,serverTime:Date.now()});});
   app.get(['/admin','/admin.html'],(req,res,next)=>{res.set('Cache-Control','no-store');if(!req.user)return res.redirect('/auth/github?returnTo=admin');requireAdmin(req,res,next);},(req,res)=>res.sendFile(join(root,'public','admin.html')));
@@ -79,7 +82,7 @@ export async function createApp(config){
   app.use((error,req,res,next)=>{
     if(res.headersSent)return next(error);
     const status=error.type==='entity.too.large'?413:error.status||500;
-    res.status(status).json({error:status===413?'文件超过 12 MB 限制':status<500?error.message:'服务暂时不可用，请稍后重试'});
+    res.set('Cache-Control','no-store').status(status).json({error:status===413?'文件超过 12 MB 限制':status<500?error.message:'服务暂时不可用，请稍后重试'});
     if(status>=500)console.error(error.message);
   });
   return {app,store};

@@ -4,8 +4,9 @@ import {randomUUID} from 'node:crypto';
 import {polygonInfo,plotPolygon,polygonDistance,LAND} from '../shared/polygon-land.mjs';
 import {createLandCheck} from '../shared/land-check.mjs';
 import {plotTerrain,TERRAIN,PLOT,MAX_COORDINATE} from '../shared/terrain.mjs';
+import {MODEL_RESOURCE_RULES} from '../shared/model-resource-rules.mjs';
 
-export const RULES={width:PLOT.width,depth:PLOT.depth,height:PLOT.height,cell:PLOT.cell,maxBytes:12*1024*1024,maxTriangles:100000,maxNodes:512,maxPrimitives:200,maxTextures:16,maxTextureSize:2048,maxCoordinate:MAX_COORDINATE};
+export const RULES={width:PLOT.width,depth:PLOT.depth,height:PLOT.height,cell:PLOT.cell,...MODEL_RESOURCE_RULES,maxCoordinate:MAX_COORDINATE};
 export function fail(status,message){throw Object.assign(new Error(message),{status});}
 export function coordinate(v){if(!Number.isSafeInteger(v)||Math.abs(v)>RULES.maxCoordinate)fail(400,'地块坐标必须为有效整数');return v;}
 export async function createStore(path){

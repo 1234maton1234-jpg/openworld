@@ -9,6 +9,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {Document,NodeIO} from '@gltf-transform/core';
 import {createApp} from '../server/app.mjs';
+import {ensureModelVariants} from '../server/model-variants.mjs';
 const exec=promisify(execFile);
 test('GitHub token login uses verified GitHub identity and rejects invalid credentials',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'openworld-auth-')),config={dataDir:dir,production:false,url:'http://127.0.0.1:8787',adminIds:[]},{app,store}=(await createApp(config)),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));config.url='http://127.0.0.1:'+server.address().port;
@@ -47,6 +48,12 @@ test('CLI session, avatar replacement and owned draft submission work end to end
     assert.equal((await fetch(config.url+'/api/cli/plots/'+draft.id+'/submit',{method:'POST',headers:other})).status,404);
     assert.equal((await fetch(config.url+'/api/cli/plots/'+draft.id+'/submit',{method:'POST',headers:{...headers,'X-CSRF-Token':'bad'}})).status,403);
     assert.equal(JSON.parse((await command('plot','submit',draft.id)).stdout).status,'pending');assert.equal((await store.getPlot('1001')).published,null);
+    await ensureModelVariants(join(dir,'uploads'),draft.id);
+    for(const suffix of ['?manifest=1','?lod=1','?lod=2']){
+      const url=config.url+'/assets/'+draft.id+'.glb'+suffix;
+      assert.equal((await fetch(url)).status,404);assert.equal((await fetch(url,{headers:other})).status,404);
+      const own=await fetch(url,{headers});assert.equal(own.status,200);assert.equal(own.headers.get('cache-control'),'private, no-store');await own.arrayBuffer();
+    }
     await assert.rejects(command('plot','submit',draft.id));
     const next=JSON.parse((await command('plot','upload',file,'--title','Next version')).stdout);await assert.rejects(command('plot','submit',next.id));assert.ok((await store.db.prepare('SELECT 1 FROM model_drafts WHERE id=?').get(next.id)));
     await command('logout');await assert.rejects(readFile(credentials));assert.equal((await fetch(config.url+'/api/mine',{headers})).status,401);

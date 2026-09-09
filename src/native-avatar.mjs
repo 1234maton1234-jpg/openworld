@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {loadModelAsset} from './model-cache.mjs';
 import {buildModel} from '../scripts/ysm/geometry.mjs';
 
 export function createNativeAvatarRuntime(data,material){
@@ -20,8 +21,8 @@ export function createNativeAvatarRuntime(data,material){
   },dispose(){alive=false;}};
   runtime.update();return runtime;
 }
-export async function loadAvatar(loader,url){
-  if(!url.startsWith('/api/development-avatar.json'))return loader.loadAsync(url);
+export async function loadAvatar(loader,url,options){
+  if(!url.startsWith('/api/development-avatar.json'))return loadModelAsset(loader,url,options);
   const response=await fetch(url);if(!response.ok)throw Error('Development avatar load failed');const data=await response.json();
   if(data.format!=='ysm'||!data.texture?.startsWith('data:image/png;base64,'))throw Error('Invalid native avatar');
   const texture=await new T.TextureLoader().loadAsync(data.texture);texture.colorSpace=T.SRGBColorSpace;texture.flipY=false;texture.magFilter=T.NearestFilter;texture.minFilter=T.NearestFilter;

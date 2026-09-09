@@ -1,7 +1,8 @@
 import * as T from 'three';
+import {releaseModelLods} from './model-lod.mjs';
 import {carSeats} from '../shared/car-seats.mjs';
 
-export function releaseCar(group){const resources=new Set();group.traverse(o=>{if(o.geometry)resources.add(o.geometry);for(const m of o.material?(Array.isArray(o.material)?o.material:[o.material]):[]){resources.add(m);for(const v of Object.values(m))if(v?.isTexture)resources.add(v);}});group.removeFromParent();for(const r of resources)r.dispose();}
+export function releaseCar(group){releaseModelLods(group);const resources=new Set();group.traverse(o=>{if(o.geometry)resources.add(o.geometry);for(const m of o.material?(Array.isArray(o.material)?o.material:[o.material]):[]){resources.add(m);for(const v of Object.values(m))if(v?.isTexture)resources.add(v);}});group.removeFromParent();for(const r of resources)r.dispose();}
 export function prepareCarModel(model,type='car'){
   model.updateMatrixWorld(true);const box=new T.Box3().setFromObject(model),center=box.getCenter(new T.Vector3()),group=new T.Group(),wheels=[],nodes=[];
   model.position.sub(new T.Vector3(center.x,box.min.y,center.z));group.add(model);group.updateMatrixWorld(true);

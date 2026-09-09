@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {createVehicleAvatarClip} from './vehicle-avatar-clip.mjs';
 import {createRiggedAvatar} from './rigged-avatar.mjs';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 
@@ -38,10 +39,10 @@ export function createAvatar(scene){
     const upperArm=limb(root,.18,.195,shirt),forearm=limb(root,.125,.145,skin),hand=box(root,.09,.13,.085,0,0,0,skin);oval(hand,.035,.075,.038,-side*.045,.006,-.012,skin);hand.name=side<0?'hand-left':'hand-right';arms.push({upperArm,forearm,hand,side});
   }
   scene.add(root);root.visible=false;let phase=0,custom=null,rig=null;
-  const bodyParts=[...root.children];
-  function setModel(model,clips=[],runtime=null){rig?.dispose();rig=null;const old=custom;if(old)root.remove(old);custom=model;if(model){const bounds=new T.Box3().setFromObject(model),size=bounds.getSize(new T.Vector3()),center=bounds.getCenter(new T.Vector3()),scale=1.8/size.y;const holder=new T.Group();holder.add(model);model.position.sub(new T.Vector3(center.x,bounds.min.y,center.z));holder.scale.setScalar(scale);custom=holder;root.add(holder);rig=runtime||createRiggedAvatar(model,clips);}return old;}
+  const bodyParts=[...root.children],vehicleClip=createVehicleAvatarClip(root);
+  function setModel(model,clips=[],runtime=null){vehicleClip.clear();rig?.dispose();rig=null;const old=custom;if(old)root.remove(old);custom=model;if(model){const bounds=new T.Box3().setFromObject(model),size=bounds.getSize(new T.Vector3()),center=bounds.getCenter(new T.Vector3()),scale=1.8/size.y;const holder=new T.Group();holder.add(model);model.position.sub(new T.Vector3(center.x,bounds.min.y,center.z));holder.scale.setScalar(scale);custom=holder;root.add(holder);rig=runtime||createRiggedAvatar(model,clips);}return old;}
   function segment(mesh,a,b){mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.scale.y=a.distanceTo(b);mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),b.clone().sub(a).normalize());}
-  return {root,setModel,update({position,yaw,visible,moving,seated,climbing=false,dt,running=false,vehicleType,firstPerson=false,crankPhase=0}){root.visible=visible;root.position.copy(position);root.rotation.y=yaw;for(const part of bodyParts)part.visible=!custom&&!firstPerson;for(const arm of arms)for(const part of [arm.upperArm,arm.forearm,arm.hand])part.visible=firstPerson||!custom;if(custom){rig?.update({moving,running,seated,climbing,vehicleType,crankPhase,dt});custom.visible=!firstPerson;if(!firstPerson)return;}torso.rotation.x=vehicleType==='bike'?-.55:0;if(moving)phase+=dt*9;for(let i=0;i<2;i++){
+  return {root,setModel,setVehicleClip:vehicleClip.update,update({position,yaw,visible,moving,seated,climbing=false,dt,running=false,vehicleType,firstPerson=false,crankPhase=0}){root.visible=visible;root.position.copy(position);root.rotation.y=yaw;for(const part of bodyParts)part.visible=!custom&&!firstPerson;for(const arm of arms)for(const part of [arm.upperArm,arm.forearm,arm.hand])part.visible=firstPerson||!custom;if(custom){rig?.update({moving,running,seated,climbing,vehicleType,crankPhase,dt});custom.visible=!firstPerson;if(!firstPerson)return;}torso.rotation.x=vehicleType==='bike'?-.55:0;if(moving)phase+=dt*9;for(let i=0;i<2;i++){
     const swing=moving?Math.sin(phase+i*Math.PI)*.5:0,hip=new T.Vector3(0,.87,0);let knee,foot;
     if(vehicleType==='bike')({knee,foot}=cyclingLeg(crankPhase+i*Math.PI));
     else if(climbing){knee=new T.Vector3(0,.57,-.28);foot=new T.Vector3(0,.17+Math.sin(phase+i*Math.PI)*.1,-.24);}

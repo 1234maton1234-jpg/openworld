@@ -5,6 +5,7 @@ import {stockCarSeats} from '../shared/car-seats.mjs';
 
 export function createDefaultCar(){
   const group=new T.Group(),wheels=[],seats=stockCarSeats();
+  group.userData.occupantClipPlanes=[[1,-.3,0,1.15],[-1,-.3,0,1.15],[0,1,0,-.4],[0,-1,0,1.58],[0,-1.73,1,3.08],[0,-1.087,-1,2.495]];
   const paint=new T.MeshStandardMaterial({color:'#8296ac',metalness:.65,roughness:.24,side:T.DoubleSide});
   const dark=new T.MeshStandardMaterial({color:'#182126',roughness:.75});
   const alloy=new T.MeshStandardMaterial({color:'#bfc8cc',metalness:.8,roughness:.25});

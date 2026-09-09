@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Scene} from 'three';
 import {createMultiplayer} from '../src/multiplayer.mjs';
 
-test('client exposes passenger targets and handles boarding, leaving and disconnect',t=>{
+test('client exposes passenger targets and handles boarding, leaving and disconnect',async t=>{
   const keys=['window','document','location','localStorage','WebSocket'],originals=new Map(keys.map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
   t.after(()=>{for(const [k,v] of originals)v?Object.defineProperty(globalThis,k,v):delete globalThis[k];});
   const canvas={width:512,height:96,getContext:()=>new Proxy({},{get:()=>()=>{},set:()=>true})},world={dataset:{}};
@@ -19,5 +19,8 @@ test('client exposes passenger targets and handles boarding, leaving and disconn
   client.enterRide('owner');assert.equal(ws.sent.at(-1).type,'ride-enter');
   receive({type:'ride',ride:{owner:'owner',seat:1,pose:{...pose,x:2.5}}});assert.equal(starts,1);assert.equal(client.ride.pose.x,2.5);
   client.exitRide();assert.equal(ws.sent.at(-1).type,'ride-exit');receive({type:'ride-end',position:pose});assert.equal(client.ride,null);assert.equal(exits,1);
+  receive({type:'ride',ride:{owner:'owner',seat:1,pose}});
+  let completed=false;const leaving=client.leaveForTeleport().then(()=>completed=true);assert.equal(ws.sent.at(-1).type,'ride-exit');assert.equal(completed,false);assert.ok(client.ride);
+  receive({type:'ride-end',position:pose});await leaving;assert.equal(client.ride,null);assert.equal(exits,1);assert.equal(completed,true);
   receive({type:'ride',ride:{owner:'owner',seat:1,pose}});ws.onclose({code:1006});assert.equal(client.ready,false);assert.equal(world.dataset.networkRtt,'');assert.match(world.dataset.networkReason,/未提供/);assert.equal(client.ride,null);assert.equal(client.rideTargets().length,0);assert.equal(exits,2);
 });
