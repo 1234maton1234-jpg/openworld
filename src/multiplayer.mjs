@@ -8,7 +8,7 @@ import {createAvatar} from './avatar.mjs';
 import {createVehicleModel} from './vehicles.mjs';
 import {blendPose,playerPose} from '../shared/player-state.mjs';
 import {TERRAIN} from '../shared/terrain.mjs';
-import {prepareCarModel,releaseCar} from './custom-car.mjs';
+import {animateVehicleModel,prepareCarModel,releaseCar} from './custom-car.mjs';
 
 function release(root){releaseModelLods(root);
   const resources=new Set();root.traverse(o=>{if(o.geometry&&!o.isSprite)resources.add(o.geometry);if(o.skeleton)resources.add(o.skeleton);for(const m of o.material?(Array.isArray(o.material)?o.material:[o.material]):[]){resources.add(m);for(const value of Object.values(m))if(value?.isTexture)resources.add(value);}});for(const value of resources)value.dispose();root.removeFromParent();
@@ -82,6 +82,7 @@ export function createMultiplayer(scene,{origin,localVehicle=()=>null,onError,on
     p.carPose=p.carPose?blendPose(p.carPose,target,1-Math.exp(-14*dt)):{...target};const pose=p.carPose;car.group.position.set(pose.x-o.x*70,pose.y,pose.z-o.z*70);car.group.rotation.set(pose.pitch||0,pose.yaw,0,'YXZ');car.group.traverse(mesh=>{mesh.castShadow=false;});
     const propeller=car.group.getObjectByName('propeller');if(propeller)propeller.rotation.z=target.phase*8;
     for(const wheel of car.wheels){wheel.spin.rotation.x=-target.phase/(1.4*wheel.radius);wheel.pivot.rotation.y=wheel.front?target.steer:0;}
+    animateVehicleModel(car,target.phase,target.speed,target.steer);
   }
   function vehicleForOwner(id){if(id===selfId)return localVehicle();const peer=peers.get(id);return peer?.car?{...peer.car,seats:peer.target.carSeats||peer.car.seats}:null;}
   function cancelTeleportExit(){if(!teleportExit)return;const pending=teleportExit;teleportExit=null;clearTimeout(pending.timer);pending.reject(new Error('连接中断，传送未完成'));}

@@ -14,6 +14,7 @@ test('presence validates coordinates and interpolates wrapped angles',()=>{
   assert.equal(playerPose({x:Infinity,y:0,z:0,yaw:0}),null);
   assert.equal(playerPose({x:0,y:0,z:0,yaw:NaN}),null);
   const p=playerPose({x:0,y:4,z:0,yaw:0,name:'fake',vehicleType:'unknown'});assert.equal(p.name,undefined);assert.equal(p.vehicleType,null);
+  const car=playerPose({x:0,y:4,z:0,yaw:0,personalCar:{x:0,y:4,z:0,yaw:0,speed:7}}).personalCar;assert.equal(car.speed,7);
   const p2=blendPose({...p,yaw:Math.PI-.1},{...p,x:10,yaw:-Math.PI+.1},.5);assert.equal(p2.x,5);assert.ok(Math.abs(p2.yaw-Math.PI)<.001);
   assert.equal(blendPose(p,{...p,x:1000},.1).x,1000);
 });
