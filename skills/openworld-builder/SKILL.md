@@ -9,7 +9,7 @@ Respond in the user's language. Resolve all bundled paths relative to this SKILL
 
 ## Connect and read context
 
-The official server is https://mirako-openworld.zeabur.app (no `/game` suffix). `login` defaults to this official server even when an older local session exists. Pass `--server URL` only when the user selects another server; local development requires an explicit `--server http://127.0.0.1:8787`. Other commands use the saved session's server and never send its credentials to a different origin.
+The official server is https://openworldcraft.com (no `/game` suffix). `login` defaults to this official server even when an older local session exists. Pass `--server URL` only when the user selects another server; local development requires an explicit `--server http://127.0.0.1:8787`. Other commands use the saved session's server and never send its credentials to a different origin.
 
 ```sh
 node "<skill>/scripts/openworld.mjs" --help

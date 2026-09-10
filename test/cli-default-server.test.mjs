@@ -10,9 +10,9 @@ test('login defaults to the official site even after local login; explicit serve
   t.mock.method(globalThis,'fetch',async url=>{destination=url;throw new Error('Captured request');});
   const login=async extra=>{await assert.rejects(run(['login','--no-browser','--config',config,...extra]),/Captured request/);return new URL(destination).origin;};
   try{
-    assert.equal(await login([]),'https://mirako-openworld.zeabur.app');
+    assert.equal(await login([]),'https://openworldcraft.com');
     await writeFile(config,JSON.stringify({server:'http://127.0.0.1:8787',cookie:'test',csrf:'test'}));
-    assert.equal(await login([]),'https://mirako-openworld.zeabur.app');
+    assert.equal(await login([]),'https://openworldcraft.com');
     assert.equal(await login(['--server','http://127.0.0.1:8787']),'http://127.0.0.1:8787');
   }finally{await rm(dir,{recursive:true,force:true});}
 });
