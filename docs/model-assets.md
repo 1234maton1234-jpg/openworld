@@ -1,6 +1,6 @@
 # Model resource validation
 
-All production GLB uploads (web buildings and CLI buildings, avatars, cars, planes and boats) use `server/validate.mjs`. Shared resource limits are defined in `shared/model-resource-rules.mjs` and exposed through existing world/context rules. Existing published assets are not rewritten.
+All production GLB uploads (CLI buildings, avatars, cars, planes and boats) use `server/validate.mjs`. The game website has no GLB picker and its former direct building-upload route is disabled; model files are uploaded only through the authenticated CLI. Shared resource limits are defined in `shared/model-resource-rules.mjs` and exposed through existing world/context rules.
 
 Model storage is selected with `ASSET_STORAGE=local|r2`. Both originals and derivatives use the same backend. See [R2 configuration and migration](r2-storage.md) before switching an existing instance; a new empty bucket alone does not migrate stored models.
 
@@ -24,6 +24,8 @@ Type-specific validation remains separate: avatars require skinning and supporte
 `server/model-optimizer.mjs` produces three independently validated standard GLB visual derivatives in a bounded worker: original-detail with recompressed textures, a 50% simplification target with 1024 px textures, and a 20% target with 512 px textures. Error thresholds and locked mesh borders can prevent the target ratio being reached. Original files are not modified. Node hierarchy, extras, skin bindings and animation channels are checked for preservation.
 
 Existing authorized model routes support `?manifest=1` and `?lod=0|1|2`. A manifest request starts deduplicated optimization when needed; it returns 202 while processing. The global optimizer allows two active workers and eight queued tasks. Completed manifests are persisted after all derivative files. Missing derivatives fall back to originals without immutable caching. Published buildings and current public avatar/vehicle IDs use immutable cache headers; private building assets remain private and pass the same ownership checks as originals. No external CDN service is configured by this change.
+
+When a replacement building is approved, the previous published GLB, its generated LOD files and manifest are removed, then its superseded submission record is deleted. A rejected replacement leaves the current published building intact. If storage cleanup fails, the superseded record remains available for diagnosis instead of losing the last reference to an orphaned object.
 
 `src/model-cache.mjs` deduplicates client downloads, limits network concurrency to two and retains at most 48 MiB of least-recently-used GLB bytes. Streaming downloads are stopped at 24 MiB, with a 20 second timeout. Cancellable subscribers share a request; cancellation aborts the underlying request only when no subscriber remains. Queued cancelled work does not download. LOD removal cancels its manifest/download and disposes any already-parsed late result. Building, avatar and personal/remote vehicle loading now use this cache. GPU objects are still independent per instance.
 

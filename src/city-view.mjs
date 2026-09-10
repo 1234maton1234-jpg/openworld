@@ -36,7 +36,7 @@ export function createCityView(scene,invalidate=()=>{},{background=true}={}){
     lampMat.emissiveIntensity=.45+night*5;
     const x=camera.position.x+origin.x*70,z=camera.position.z+origin.z*70;
     if(lightSource!==lampPositions||Math.hypot(x-lightX,z-lightZ)>5){lightSource=lampPositions;lightX=x;lightZ=z;lightSelection=lampPositions.map(lamp=>({lamp,d:(lamp.p[0]-x)**2+(lamp.p[2]-z)**2})).filter(item=>item.d<65**2).sort((a,b)=>a.d-b.d).slice(0,6).map(item=>item.lamp);}
-    nearbyLights.forEach((light,i)=>{const lamp=lightSelection[i];if(!lamp){light.intensity=0;return;}const {p,angle}=lamp;light.position.set(p[0]-origin.x*70+Math.cos(angle)*1.3,p[1]+CURB_HEIGHT+7.9,p[2]-origin.z*70-Math.sin(angle)*1.3);light.intensity=night*1200;});
+    nearbyLights.forEach((light,i)=>{const lamp=lightSelection[i];if(!lamp){light.intensity=0;return;}const {p,angle}=lamp;light.position.set(p[0]-origin.x*70+Math.cos(angle)*1.3,p[1]+CURB_HEIGHT+7.9,p[2]-origin.z*70-Math.sin(angle)*1.3);light.intensity=night*650;});
   }
   function streetLights(items){
     lampPositions=items;streetCollision.set(items);

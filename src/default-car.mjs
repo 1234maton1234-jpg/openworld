@@ -6,10 +6,10 @@ import {stockCarSeats} from '../shared/car-seats.mjs';
 export function createDefaultCar(){
   const group=new T.Group(),wheels=[],seats=stockCarSeats();
   group.userData.occupantClipPlanes=[[1,-.3,0,1.15],[-1,-.3,0,1.15],[0,1,0,-.4],[0,-1,0,1.58],[0,-1.73,1,3.08],[0,-1.087,-1,2.495]];
-  const paint=new T.MeshStandardMaterial({color:'#8296ac',metalness:.65,roughness:.24,side:T.DoubleSide});
+  const paint=new T.MeshPhysicalMaterial({color:'#8296ac',metalness:.65,roughness:.26,clearcoat:1,clearcoatRoughness:.12,side:T.DoubleSide});
   const dark=new T.MeshStandardMaterial({color:'#182126',roughness:.75});
   const alloy=new T.MeshStandardMaterial({color:'#bfc8cc',metalness:.8,roughness:.25});
-  const glass=new T.MeshStandardMaterial({color:'#253f51',transparent:true,opacity:.68,depthWrite:false,side:T.DoubleSide,roughness:.15});
+  const glass=new T.MeshPhysicalMaterial({color:'#69818e',transparent:true,opacity:.38,depthWrite:false,side:T.DoubleSide,roughness:.08,metalness:0,ior:1.5,clearcoat:1,clearcoatRoughness:.04});
   const headlight=new T.MeshStandardMaterial({color:'#ecf6ff',emissive:'#c4e3ff',emissiveIntensity:.8});
   const taillight=new T.MeshStandardMaterial({color:'#a81124',emissive:'#ff1533',emissiveIntensity:.65});
   function mesh(name,geometry,material,x=0,y=0,z=0,parent=group){const m=new T.Mesh(geometry,material);m.name=name;m.position.set(x,y,z);m.castShadow=!material.transparent;m.receiveShadow=true;parent.add(m);return m;}

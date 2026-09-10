@@ -5,11 +5,9 @@ import {allowedOrigin,normalizeOrigins} from './origins.mjs';
 import {installTeleports} from './teleports.mjs';
 import {mkdirSync} from 'node:fs';
 import {resolve,join} from 'node:path';
-import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {createStore,RULES,coordinate,fail} from './store.mjs';
 import {installAuth,requireUser,requireAdmin} from './auth.mjs';
-import {validateModel} from './validate.mjs';
 import {installCliApi} from './cli-api.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -43,20 +41,7 @@ export async function createApp(config){
   });
   app.post('/api/plots/check',requireUser,async (req,res)=>{(await store.rate('land-check:'+req.user.id,60));res.json((await store.checkLand(req.body?.polygon)));});
   app.post('/api/plots/claim',requireUser,async (req,res)=>{(await store.rate('claim:'+req.user.id,10));res.status(201).json(req.body?.polygon?(await store.claimLand(req.user.id,req.body.polygon)):(await store.claim(req.user.id,req.body?.x,req.body?.z)));});
-  let validating=0;
-  app.post('/api/submissions',requireUser,async (req,res,next)=>{
-    (await store.rate('upload:'+req.user.id,8,3600000));(await store.canSubmit(req.user.id));req.plotRevision=store.plotRevision(req.user.id);
-    if(validating>=2)fail(503,'当前有模型正在校验，请稍后提交');validating++;let released=false;
-    const release=()=>{if(!released){released=true;validating--;}};res.once('finish',release);res.once('close',()=>{if(!req.validationRunning)release();});req.releaseValidation=release;next();
-  },express.raw({type:['model/gltf-binary','application/octet-stream'],limit:RULES.maxBytes,inflate:false}),async(req,res)=>{
-    req.validationRunning=true;
-    try{
-      const title=typeof req.query.title==='string'?req.query.title.trim():'';if(!title||title.length>60)fail(400,'建筑名称需为 1–60 字');
-      const metrics=await validateModel(req.body,(await store.getPlot(req.user.id))),id=randomUUID();if(req.plotRevision!==store.plotRevision(req.user.id))fail(409,'地皮已删除，请重新上传');(await store.canSubmit(req.user.id));
-      await uploads.put(id+'.glb',req.body,{exclusive:true});
-      try{res.status(201).json((await store.submit(req.user.id,title,metrics,id,req.plotRevision)));}catch(error){await removeModel(uploads,id);throw error;}
-    }finally{req.releaseValidation();}
-  });
+  app.post('/api/submissions',requireUser,(req,res)=>res.status(410).json({error:'网页上传已停用，请使用 openworld CLI'}));
   app.get('/api/admin/submissions',requireAdmin,async (req,res)=>{
     const status=req.query.status||'pending',offset=Number(req.query.offset||0);
     if(!['pending','published','rejected','superseded'].includes(status)||!Number.isSafeInteger(offset)||offset<0)fail(400,'审核筛选参数无效');
@@ -65,7 +50,9 @@ export async function createApp(config){
   app.post('/api/admin/submissions/:id/review',requireAdmin,async (req,res)=>{
     if(typeof req.body?.approve!=='boolean'||typeof req.body?.note!=='string'||req.body.note.length>500)fail(400,'审核参数无效');
     if(!req.body.approve&&!req.body.note.trim())fail(400,'请填写退回原因');
-    res.json((await store.review(req.params.id,req.user.id,req.body.approve,req.body.note.trim())));
+    const {submission,replaced}=await store.review(req.params.id,req.user.id,req.body.approve,req.body.note.trim());
+    if(replaced)try{await removeModel(uploads,replaced);await store.db.prepare("DELETE FROM submissions WHERE id=? AND status='superseded' AND NOT EXISTS (SELECT 1 FROM plots WHERE published=?)").run(replaced,replaced);}catch(error){console.error('Replaced building cleanup failed:',error.code||error.message);}
+    res.json(submission);
   });
   app.get('/assets/:id.glb',async (req,res)=>{
     const row=(await store.getSubmission(req.params.id));if(!row)fail(404,'模型不存在');
