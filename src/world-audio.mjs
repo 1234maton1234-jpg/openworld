@@ -1,4 +1,5 @@
 const WALK_INTERVAL=.48,RUN_INTERVAL=.32;
+export const rainVolume=rain=>Math.min(.14,Math.max(0,rain)*.1);
 
 export function advanceStepClock(clock,dt,moving,running,starting=false){
   if(!moving)return {clock:0,steps:0};
@@ -30,6 +31,6 @@ export function createWorldAudio(){
     source.start(now);source.stop(now+.14);thump.start(now);thump.stop(now+.1);stepSide=1-stepSide;
   }
   const unlock=()=>ensure();document.addEventListener('pointerdown',unlock,{capture:true,passive:true});document.addEventListener('keydown',unlock,{capture:true});
-  document.addEventListener('visibilitychange',()=>{if(rainGain)rainGain.gain.setTargetAtTime(document.hidden?0:Math.min(.2,Number(document.body.dataset.weatherRain)||0),context.currentTime,.12);});
-  return {update(dt,{moving=false,running=false,rain=0}={}){const result=advanceStepClock(stepClock,dt,moving,running,moving&&!wasMoving);stepClock=result.clock;wasMoving=moving;for(let i=0;i<result.steps;i++)footstep(running);if(rainGain)rainGain.gain.setTargetAtTime(document.hidden?0:Math.min(.26,Math.max(0,rain)*.18),context.currentTime,.35);document.body.dataset.weatherRain=String(rain);}};
+  document.addEventListener('visibilitychange',()=>{if(rainGain)rainGain.gain.setTargetAtTime(document.hidden?0:rainVolume(Number(document.body.dataset.weatherRain)||0),context.currentTime,.12);});
+  return {update(dt,{moving=false,running=false,rain=0}={}){const result=advanceStepClock(stepClock,dt,moving,running,moving&&!wasMoving);stepClock=result.clock;wasMoving=moving;for(let i=0;i<result.steps;i++)footstep(running);if(rainGain)rainGain.gain.setTargetAtTime(document.hidden?0:rainVolume(rain),context.currentTime,.35);document.body.dataset.weatherRain=String(rain);}};
 }
