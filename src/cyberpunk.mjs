@@ -9,6 +9,7 @@ import {SSAOPass} from 'three/addons/postprocessing/SSAOPass.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {createWetRoads} from './render-quality.mjs';
 
+export function cyberpunkPreferred(storage){try{return storage.getItem('openworld.visual-style')==='cyberpunk';}catch{return false;}}
 export function createCyberpunk(renderer,scene,camera){
   const composer=new EffectComposer(renderer),render=new RenderPass(scene,camera);
   const wet=createWetRoads(),room=new RoomEnvironment(),pmrem=new PMREMGenerator(renderer);
@@ -52,8 +53,7 @@ export function createCyberpunk(renderer,scene,camera){
   });
   const output=new OutputPass(),antialias=new ShaderPass(FXAAShader);
   for(const pass of [render,ao,bloom,grade,output,antialias])composer.addPass(pass);
-  let enabled=true;
-  try{enabled=localStorage.getItem('openworld.visual-style')!=='natural';}catch{}
+  let enabled=cyberpunkPreferred(localStorage);
   const button=document.createElement('button');button.id='visual-style';button.type='button';
   button.style.cssText='padding:8px 9px;border:1px solid #69dfdd80;border-radius:12px;background:#101d2be8;color:#a5f3ed;cursor:pointer;font:inherit;font-size:12px;pointer-events:auto;white-space:nowrap;flex-shrink:0';
   function sync(){button.textContent=enabled?'◈ 赛博':'◇ 原色';button.setAttribute('aria-pressed',String(enabled));button.setAttribute('aria-label','赛博朋克画面效果');button.title=enabled?'切换为原色画面':'开启赛博朋克画面';}
