@@ -5,13 +5,19 @@ import {homedir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import {pathToFileURL} from 'node:url';
+import {fetchAuthoring,CLI_VERSION} from './compatibility.mjs';
 
 export async function run(args=process.argv.slice(2)){
+  if(args.length===1&&args[0]==='--version'){console.log(CLI_VERSION);return;}
   const options={};const words=[];for(let i=0;i<args.length;i++){if(args[i].startsWith('--')){const key=args[i].slice(2);if(!['server','title','category','config','help','token','no-browser'].includes(key))throw new Error('未知参数 --'+key);options[key]=['help','token','no-browser'].includes(key)?true:args[++i];if(options[key]===undefined)throw new Error('参数缺少值');}else words.push(args[i]);}
-  if(!words.length||options.help){console.log('openworld login [--server URL]\nopenworld whoami\nopenworld logout\nopenworld avatar set FILE.glb\nopenworld vehicle set FILE.glb [--category car|plane|boat]\nopenworld plot upload FILE.glb --title NAME\nopenworld plot submit DRAFT_ID\nlogin 默认打开浏览器授权；--no-browser 仅显示链接；--token 使用环境变量或标准输入 Token。');return;}
+  if(!words.length||options.help){console.log('openworld --version\nopenworld rules [--server URL]\nopenworld login [--server URL]\nopenworld whoami\nopenworld logout\nopenworld avatar set FILE.glb\nopenworld vehicle set FILE.glb [--category car|plane|boat]\nopenworld plot upload FILE.glb --title NAME\nopenworld plot submit DRAFT_ID\nlogin 默认打开浏览器授权；--no-browser 仅显示链接；--token 使用环境变量或标准输入 Token。');return;}
   const configPath=options.config||process.env.OPENWORLD_CLI_CONFIG||join(homedir(),'.openworld','credentials.json');let saved;try{saved=JSON.parse(await readFile(configPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
   const url=new URL(options.server||(words[0]==='login'?'https://openworldcraft.com':saved?.server)||'https://openworldcraft.com');if(url.username||url.password||url.pathname!=='/'||url.search||url.hash||!(url.protocol==='https:'||url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw new Error('服务器须为 HTTPS 源地址；仅本机允许 HTTP');const server=url.origin;
-  const login=words[0]==='login';if(!login&&(!saved||saved.server!==server))throw new Error('请先对该服务器执行 login');
+  const login=words[0]==='login';
+  const authoring=words[0]==='logout'?null:await fetchAuthoring(server,{required:words[0]==='rules'});
+  if(words[0]==='rules'){console.log(JSON.stringify(authoring,null,2));return;}
+  if(!authoring&&words[0]!=='logout')console.error('服务器尚未提供实时建模规则；本次未验证兼容性。');
+  if(!login&&(!saved||saved.server!==server))throw new Error('请先对该服务器执行 login');
   async function request(path,{method='GET',json,body}={}){const headers={Origin:server};if(!login){headers.Cookie=saved.cookie;headers['X-CSRF-Token']=saved.csrf;}if(json){headers['Content-Type']='application/json';body=JSON.stringify(json);}else if(body)headers['Content-Type']='model/gltf-binary';const res=await fetch(server+path,{method,headers,body,redirect:'error',signal:AbortSignal.timeout(60000)});const result=await res.json();if(!res.ok)throw new Error(result.error||'请求失败');return {result,cookie:res.headers.get('set-cookie')?.split(';')[0]};}
   if(login){
     let auth;
