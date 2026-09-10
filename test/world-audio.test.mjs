@@ -19,3 +19,7 @@ test('step clock preserves partial cadence across frames',()=>{
   assert.equal(second.steps,1);
   assert.ok(Math.abs(second.clock-.02)<1e-9);
 });
+
+test('the first movement frame produces an immediate audible step',()=>{
+  assert.deepEqual(advanceStepClock(0,.016,true,false,true),{clock:.016,steps:1});
+});
