@@ -47,7 +47,7 @@ function renderSelected(){
   if(selected&&!row&&!terrain?.buildable)$('#claim').textContent='公共区域，不可领取';
   $('#open-upload').hidden=!own;
 }
-action('#start',()=>{if(remainingPlotClaims(state.mine)===0)return showMine();if(!state.planning)return toast('请等待地图加载完成');landDraft=[];world.setLandDrawing(true);$('#land-editor').hidden=false;updateLand();toast('沿道路点击 3～8 个顶点圈地，WASD 平移，滚轮缩放；可撤销顶点');});
+action('#start',async()=>{if(state.session?.user)state.mine=await api('/api/mine');if(remainingPlotClaims(state.mine)===0)return showMine();if(!state.planning)return toast('请等待地图加载完成');landDraft=[];world.setLandDrawing(true);$('#land-editor').hidden=false;updateLand();toast('沿道路点击 3～8 个顶点圈地，WASD 平移，滚轮缩放；可撤销顶点');});
 action('#home',()=>world.focus(0,0));
 action('#walk',()=>{if(landDraft)cancelLand();world.setWalk(true);toast('点击画面控制视角；Esc 可释放鼠标。可走上低台阶和庭院，墙体会阻挡通行。');});action('#exit-walk',()=>world.setWalk(false));
 $('#coordinates').addEventListener('submit',e=>{e.preventDefault();const x=Number($('#coord-x').value),z=Number($('#coord-z').value);if(!validCoordinate(x)||!validCoordinate(z))return toast('请输入有效整数坐标');world.focus(x,z);});
