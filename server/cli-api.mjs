@@ -15,6 +15,7 @@ export async function installCliApi(app,store,uploads){
   await db.exec('CREATE TABLE IF NOT EXISTS extra_vehicles(owner TEXT NOT NULL REFERENCES users(id),category TEXT NOT NULL,id TEXT NOT NULL,metrics TEXT NOT NULL,PRIMARY KEY(owner,category))');
   function category(req){try{return vehicleCategory(req.query.category);}catch(error){fail(400,error.message);}}
   async function getVehicle(owner,type){return type==='car'?db.prepare('SELECT id,metrics FROM vehicles WHERE owner=?').get(owner):db.prepare('SELECT id,metrics FROM extra_vehicles WHERE owner=? AND category=?').get(owner,type);}
+  async function selectedPlot(owner,key){if(key)return store.getPlot(owner,key);const plots=await store.getPlots(owner);if(plots.length>1)fail(409,'该账号有多块领地，请使用 --plot X,Z 选择');return plots[0];}
   const upload=[requireUser,async (req,res,next)=>{(await store.rate('cli-upload:'+req.user.id,12,3600000));if(busy>=2)fail(503,'模型校验繁忙');busy++;let done=false;req.release=()=>{if(!done){done=true;busy--;}};res.once('finish',req.release);res.once('close',()=>{if(!req.validating)req.release();});next();},express.raw({type:['model/gltf-binary','application/octet-stream'],limit:RULES.maxBytes,inflate:false})];
   app.get('/api/avatar',async (req,res)=>{const row=req.user&&(await db.prepare('SELECT id FROM avatars WHERE owner=?').get(req.user.id));res.json({url:row?'/api/avatar/'+row.id+'.glb':null});});
   app.get('/api/vehicle',async(req,res)=>{const type=category(req),row=req.user&&await getVehicle(req.user.id,type);res.json({id:row?.id||null,url:row?'/api/vehicle/'+row.id+'.glb':null,category:type});});
@@ -33,19 +34,19 @@ export async function installCliApi(app,store,uploads){
     if(old)try{await removeModel(uploads,old.id);}catch{}res.json({id,url:'/api/avatar/'+id+'.glb',metrics});
   }finally{req.release();}});
   app.post('/api/cli/plots/upload',...upload,async(req,res)=>{req.validating=true;try{
-    const plot=(await store.getPlot(req.user.id));if(!plot)fail(409,'请先在网页领取地皮');const title=typeof req.query.title==='string'?req.query.title.trim():'';if(!title||title.length>60)fail(400,'名称须为 1～60 字');
-    const revision=store.plotRevision(req.user.id),metrics=await validateModel(req.body,plot),id=randomUUID();
-    if(revision!==store.plotRevision(req.user.id)||!(await store.getPlot(req.user.id)))fail(409,'地皮已删除，请重新上传');
+    const plot=await selectedPlot(req.user.id,req.query.plot);if(!plot)fail(409,'请先在网页领取地皮');const title=typeof req.query.title==='string'?req.query.title.trim():'';if(!title||title.length>60)fail(400,'名称须为 1～60 字');
+    const revision=store.plotRevision(req.user.id,plot.key),metrics=await validateModel(req.body,plot),id=randomUUID();
+    if(revision!==store.plotRevision(req.user.id,plot.key)||!(await store.getPlot(req.user.id,plot.key)))fail(409,'地皮已删除，请重新上传');
     let written=false;
     try{await store.transaction(async()=>{
-      if(revision!==store.plotRevision(req.user.id)||!await store.getPlot(req.user.id))fail(409,'地皮已删除，请重新上传');
+      if(revision!==store.plotRevision(req.user.id,plot.key)||!await store.getPlot(req.user.id,plot.key))fail(409,'地皮已删除，请重新上传');
       if((await db.prepare('SELECT count(*) n FROM model_drafts WHERE owner=?').get(req.user.id)).n>=20)fail(409,'最多保留 20 份未提交模型');
       await uploads.put(id+'.glb',req.body,{exclusive:true});written=true;
-      await db.prepare('INSERT INTO model_drafts VALUES (?,?,?,?,?)').run(id,req.user.id,title,JSON.stringify(metrics),Date.now());
+      await db.prepare('INSERT INTO model_drafts(id,owner,title,metrics,created,plot_x,plot_z) VALUES (?,?,?,?,?,?,?)').run(id,req.user.id,title,JSON.stringify(metrics),Date.now(),plot.x,plot.z);
     });}catch(error){if(written)await removeModel(uploads,id);throw error;}
     res.status(201).json({id,title,status:'draft',metrics});
   }finally{req.release();}});
   app.post('/api/cli/plots/:id/submit',requireUser,async (req,res)=>{
-    (await store.rate('cli-submit:'+req.user.id,20));const result=(await store.transaction(async ()=>{const draft=(await db.prepare('SELECT * FROM model_drafts WHERE id=? AND owner=?').get(req.params.id,req.user.id));if(!draft)fail(404,'未找到自己的待提交模型');(await store.canSubmit(req.user.id));(await db.prepare("INSERT INTO submissions(id,owner,title,status,metrics,created) VALUES (?,?,?,'pending',?,?)").run(draft.id,req.user.id,draft.title,draft.metrics,Date.now()));(await db.prepare('DELETE FROM model_drafts WHERE id=?').run(draft.id));return (await store.getSubmission(draft.id));}));res.status(201).json(result);
+    (await store.rate('cli-submit:'+req.user.id,20));const result=(await store.transaction(async ()=>{const draft=(await db.prepare('SELECT * FROM model_drafts WHERE id=? AND owner=?').get(req.params.id,req.user.id));if(!draft)fail(404,'未找到自己的待提交模型');const key=draft.plot_x+','+draft.plot_z;(await store.canSubmit(req.user.id,key));(await db.prepare("INSERT INTO submissions(id,owner,title,status,metrics,created,plot_x,plot_z) VALUES (?,?,?,'pending',?,?,?,?)").run(draft.id,req.user.id,draft.title,draft.metrics,Date.now(),draft.plot_x,draft.plot_z));(await db.prepare('DELETE FROM model_drafts WHERE id=?').run(draft.id));return (await store.getSubmission(draft.id));}));res.status(201).json(result);
   });
 }

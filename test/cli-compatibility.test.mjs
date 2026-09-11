@@ -5,7 +5,7 @@ import {run} from '../cli/openworld.mjs';
 const manifest={schemaVersion:1,revision:'test',cli:{latestVersion:'1.9.0',minimumVersion:'1.0.0',protocolVersion:1},rules:{maxBytes:100},modelRules:'Current modeling rules'};
 test('compatible clients accept newer releases and fetch without credentials',async t=>{
   t.mock.method(globalThis,'fetch',async(url,options)=>{assert.equal(url,'https://example.com/api/cli/authoring');assert.equal(options.redirect,'error');assert.equal(options.credentials,'omit');assert.equal(options.headers.Cookie,undefined);return Response.json(manifest);});
-  assert.equal((await fetchAuthoring('https://example.com')).cli.latestVersion,'1.9.0');assert.equal(CLI_VERSION,'1.1.0');
+  assert.equal((await fetchAuthoring('https://example.com')).cli.latestVersion,'1.9.0');assert.equal(CLI_VERSION,'1.2.0');
 });
 test('incompatible and malformed contracts stop commands',async t=>{
   t.mock.method(globalThis,'fetch',async()=>Response.json({...manifest,cli:{...manifest.cli,minimumVersion:'2.0.0'}}));

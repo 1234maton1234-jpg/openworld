@@ -1,4 +1,4 @@
-export const CLI_VERSION='1.1.0';
+export const CLI_VERSION='1.2.0';
 const UPDATE_URL='https://github.com/Mirako-Official/openworld-builder';
 function version(value){if(typeof value!=='string'||!/^\d+\.\d+\.\d+$/.test(value))throw Error('Invalid CLI version in server contract');const parts=value.split('.').map(Number);if(!parts.every(Number.isSafeInteger))throw Error('Invalid CLI version in server contract');return parts;}
 function older(a,b){const left=version(a),right=version(b);for(let i=0;i<3;i++)if(left[i]!==right[i])return left[i]<right[i];return false;}

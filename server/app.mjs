@@ -20,6 +20,7 @@ export async function createApp(config){
   const data=resolve(config.dataDir),uploadDirectory=join(data,'uploads');mkdirSync(uploadDirectory,{recursive:true});
   const uploads=config.assetStore||(config.r2?r2AssetStorage(config.r2):localAssetStorage(uploadDirectory));
   const store=(await createStore(config.databaseUrl||join(data,'town.sqlite'))),app=express();app.disable('x-powered-by');
+  try{for(const grant of config.plotGrants||[]){let owner=(await store.db.prepare('SELECT owner FROM plot_grants WHERE name=?').get(grant.name))?.owner;if(!owner){const matches=await store.db.prepare('SELECT DISTINCT owner FROM plots WHERE name=?').all(grant.name);if(matches.length!==1)throw new Error(`Plot grant requires exactly one territory named "${grant.name}"; found ${matches.length}.`);owner=matches[0].owner;await store.db.prepare('INSERT INTO plot_grants(name,owner) VALUES (?,?)').run(grant.name,owner);}await store.setPlotLimit(owner,grant.limit);}}catch(error){await store.close();throw error;}
   app.use((req,res,next)=>{
     res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
     if(req.path.startsWith('/api')||req.path.startsWith('/auth')||req.path.startsWith('/assets'))res.set('Cache-Control','no-store');
@@ -30,14 +31,15 @@ export async function createApp(config){
   app.get('/api/cli/authoring',async(req,res)=>res.json(await authoringContract()));
   try{if(config.devAvatarFile){const {installDevelopmentAvatar}=await import('./development-avatar.mjs');await installDevelopmentAvatar(app,config);}await installAuth(app,store,config);await installCliApi(app,store,uploads);await installTeleports(app,store);}catch(error){await store.close();throw error;}
   app.get('/api/world',async (req,res)=>{const x=coordinate(Number(req.query.x??0)),z=coordinate(Number(req.query.z??0)),r=Number(req.query.radius??3);if(!Number.isInteger(r)||r<1||r>4)fail(400,'加载范围无效');res.json({plots:(await store.world(x,z,r)),planning:{...(await store.planner.around(x,z)),lots:[],freeform:true},rules:RULES});});
-  app.get('/api/mine',requireUser,async (req,res)=>{const plots=await store.getPlots(req.user.id);res.json({plots,plot:plots[0]||null,plotLimit:RULES.maxPlotsPerOwner,submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))});});
+  async function ownedPlot(req){if(req.query.plot)return store.getPlot(req.user.id,req.query.plot);const plots=await store.getPlots(req.user.id);if(plots.length>1)fail(409,'请先选择要操作的领地');return plots[0];}
+  app.get('/api/mine',requireUser,async (req,res)=>{const plots=await store.getPlots(req.user.id);res.json({plots,plot:plots[0]||null,plotLimit:await store.getPlotLimit(req.user.id),submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))});});
   app.patch('/api/plots/mine',requireUser,async (req,res)=>{
     const {name,description}=req.body||{};if(typeof name!=='string'||!name.trim()||name.trim().length>60||typeof description!=='string'||description.trim().length>1000)fail(400,'名称需为 1–60 字，介绍不超过 1000 字');
-    if(!(await store.getPlot(req.user.id)))fail(404,'你尚未领取地皮');
-    (await store.db.prepare('UPDATE plots SET name=?,description=? WHERE owner=?').run(name.trim(),description.trim(),req.user.id));res.json((await store.getPlot(req.user.id)));
+    const plot=await ownedPlot(req);if(!plot)fail(404,'你尚未领取地皮');
+    (await store.db.prepare('UPDATE plots SET name=?,description=? WHERE owner=? AND x=? AND z=?').run(name.trim(),description.trim(),req.user.id,plot.x,plot.z));res.json((await store.getPlot(req.user.id,plot.key)));
   });
   app.delete('/api/plots/mine',requireUser,async (req,res)=>{
-    const ids=(await store.deletePlot(req.user.id));
+    const plot=await ownedPlot(req);if(!plot)fail(404,'你尚未领取地皮');const ids=(await store.deletePlot(req.user.id,plot.key));
     for(const id of ids)try{await removeModel(uploads,id);}catch(error){if(error.code!=='ENOENT')console.error('Plot asset cleanup failed:',error.code);}
     res.json({ok:true});
   });
@@ -47,7 +49,7 @@ export async function createApp(config){
   app.get('/api/admin/submissions',requireAdmin,async (req,res)=>{
     const status=req.query.status||'pending',offset=Number(req.query.offset||0);
     if(!['pending','published','rejected','superseded'].includes(status)||!Number.isSafeInteger(offset)||offset<0)fail(400,'审核筛选参数无效');
-    res.json(await store.db.prepare('SELECT s.*,u.login,p.x,p.z,p.name AS plot_name,p.description AS plot_description FROM submissions s JOIN users u ON s.owner=u.id JOIN plots p ON p.owner=s.owner WHERE s.status=? ORDER BY s.created DESC,s.id LIMIT 100 OFFSET ?').all(status,offset));
+    res.json(await store.db.prepare('SELECT s.*,u.login,p.x,p.z,p.name AS plot_name,p.description AS plot_description FROM submissions s JOIN users u ON s.owner=u.id JOIN plots p ON p.owner=s.owner AND p.x=s.plot_x AND p.z=s.plot_z WHERE s.status=? ORDER BY s.created DESC,s.id LIMIT 100 OFFSET ?').all(status,offset));
   });
   app.post('/api/admin/submissions/:id/review',requireAdmin,async (req,res)=>{
     if(typeof req.body?.approve!=='boolean'||typeof req.body?.note!=='string'||req.body.note.length>500)fail(400,'审核参数无效');

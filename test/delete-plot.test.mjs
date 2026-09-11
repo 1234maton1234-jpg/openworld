@@ -18,7 +18,7 @@ test('owner deletion releases land, removes versions and drafts, and preserves a
     const publicPlot=(await store.world(-7,1,1)).find(p=>p.owner==='1001');assert.equal(publicPlot.name,'My garden');assert.equal(publicPlot.description,'A quiet garden.');
     (await store.db.prepare('INSERT INTO plots(x,z,owner) VALUES (?,?,?)').run(900,900,'1002'));
     const published=(await store.submit('1001','Published',{}));(await store.review(published.id,'1001',true,''));const pending=(await store.submit('1001','Pending',{}));
-    (await store.db.prepare('INSERT INTO model_drafts VALUES (?,?,?,?,?)').run('draft','1001','Draft','{}',0));
+    (await store.db.prepare('INSERT INTO model_drafts(id,owner,title,metrics,created,plot_x,plot_z) VALUES (?,?,?,?,?,?,?)').run('draft','1001','Draft','{}',0,-7,1));
     (await store.db.prepare('INSERT INTO avatars VALUES (?,?,?)').run('1001','avatar','{}'));
     for(const id of [published.id,pending.id,'draft','avatar'])writeFileSync(join(dir,'uploads',id+'.glb'),'fixture');
     const remove=headers=>fetch(base+'/api/plots/mine',{method:'DELETE',headers:{Origin:config.url,...headers}}),headers={Cookie:owner.cookie,'X-CSRF-Token':owner.csrf};
