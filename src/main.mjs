@@ -32,6 +32,7 @@ function cancelLand(){landDraft=null;checkedLand=null;world.setLandDrawing(false
 action('#land-undo',()=>{landDraft?.pop();if(landDraft)updateLand();});action('#land-cancel',cancelLand);
 action('#land-login',async()=>{if(state.session?.githubReady){location.href='/auth/github';return;}toast('站点管理员尚未配置 GitHub 登录');});
 action('#land-add',()=>{const x=Number($('#vertex-x').value),z=Number($('#vertex-z').value);if(!$('#vertex-x').value||!$('#vertex-z').value||!Number.isFinite(x)||!Number.isFinite(z))return toast('请输入顶点世界坐标');addVertex([Math.round(x/2)*2,Math.round(z/2)*2]);});
+const builderOnboarding=$('#builder-onboarding'),builderInstalled=$('#builder-installed');$('#builder-install-link').addEventListener('click',()=>{builderInstalled.disabled=false;$('#builder-install-status').textContent='安装页面已打开。安装 Skill 后返回这里继续。';});builderInstalled.addEventListener('click',()=>builderOnboarding.close());builderOnboarding.addEventListener('cancel',event=>event.preventDefault());function showBuilderOnboarding(plot){$('#builder-plot').textContent=`新领地 · ${plot.x} / ${plot.z} · ${Math.round(plot.area||4096)} m²`;builderInstalled.disabled=true;$('#builder-install-status').textContent='请先打开安装页面，完成后即可继续。';builderOnboarding.showModal();}
 function renderSelected(){
   if(landDraft){const canClaim=remainingPlotClaims(state.mine)>0;$('#land-login').hidden=!!state.session?.user;$('#plot-title').textContent='圈出你的领地';$('#plot-description').textContent='逐点画出 3～8 边形。绿色可领取，红色提示原因；地皮边界之间至少相隔 2 米。';$('#plot-owner').textContent='2 米网格 · 每条边至少 8 米 · 不限高';$('#open-upload').hidden=true;$('#claim').disabled=!checkedLand||!canClaim;$('#claim').textContent=!canClaim?'当前已达到领地上限':checkedLand?'确认领取这片土地 ↗':'调整轮廓后领取';return;}
   $('#land-login').hidden=true;
@@ -55,8 +56,8 @@ $('#login').addEventListener('click',e=>{if(!state.session?.githubReady){e.preve
 action('#logout',async()=>{await api('/api/logout',{method:'POST'});await session();accountBar.hidden=true;$('#workspace').close();});
 action('#claim',async()=>{
   if(!state.session?.user){if(state.session?.githubReady)location.href='/auth/github';else toast('站点管理员尚未配置 GitHub 登录');return;}
-  if(landDraft){if(!checkedLand)return;const plot=await api('/api/plots/claim',{method:'POST',json:{polygon:landDraft}});cancelLand();state.selected={x:plot.x,z:plot.z};await session();await refreshRegion();toast(`${plot.polygon.length} 边形领地已领取 · ${plot.area} 平方米，可以下载轮廓开始建模`);return;}
-  const selected={...state.selected};await api('/api/plots/claim',{method:'POST',json:selected});await session();await refreshRegion();toast(`地块 ${selected.x} / ${selected.z} 已属于你，可以开始建模了`);
+  if(landDraft){if(!checkedLand)return;const plot=await api('/api/plots/claim',{method:'POST',json:{polygon:landDraft}});cancelLand();state.selected={x:plot.x,z:plot.z};await session();await refreshRegion();showBuilderOnboarding(plot);toast(`${plot.polygon.length} 边形领地已领取 · ${plot.area} 平方米，可以下载轮廓开始建模`);return;}
+  const selected={...state.selected},plot=await api('/api/plots/claim',{method:'POST',json:selected});await session();await refreshRegion();showBuilderOnboarding(plot);toast(`地块 ${selected.x} / ${selected.z} 已属于你，可以开始建模了`);
 });
 function openWorkspace(admin){world.setWalk(false);state.review=null;state.previewVersion++;$('#review-actions').hidden=true;$('#workspace-title').textContent=admin?'审核工作台':'我的领地';$('#workspace-eyebrow').textContent=admin?'BUILD SOMETHING WORTH SHARING':'YOUR LITTLE CORNER';$('#review-list').hidden=!admin;$('#cli-upload-note').hidden=admin||!primaryPlot(state.mine);$('#mine-content').hidden=admin;$('#submission-list').hidden=admin;$('#preview-caption').textContent='选择建筑版本，即可旋转查看';$('#workspace').showModal();preview??=createPreview();preview.clear();}
 async function previewSubmission(row,admin){
