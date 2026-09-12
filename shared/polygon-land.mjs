@@ -19,15 +19,16 @@ export function containsPolygon(poly,other){
   for(const [a,b] of edges(other)){const cuts=[0,1],dx=b[0]-a[0],dz=b[1]-a[1];for(const [c,d] of edges(poly)){const ux=d[0]-c[0],uz=d[1]-c[1],den=dx*uz-dz*ux;if(Math.abs(den)<EPS)continue;const t=((c[0]-a[0])*uz-(c[1]-a[1])*ux)/den,u=((c[0]-a[0])*dz-(c[1]-a[1])*dx)/den;if(t>0&&t<1&&u>=0&&u<=1)cuts.push(t);}cuts.sort((x,y)=>x-y);for(let i=1;i<cuts.length;i++){const t=(cuts[i-1]+cuts[i])/2;if(!inside(poly,[a[0]+dx*t,a[1]+dz*t]))return false;}}
   return true;
 }
-export function polygonInfo(p){
+export function polygonInfo(p,limits=LAND){
   const reject=message=>{throw Object.assign(new Error(message),{status:400});};
   if(!Array.isArray(p)||p.length<3||p.length>8||p.some(v=>!Array.isArray(v)||v.length!==2||v.some(n=>!Number.isFinite(n)||Math.abs(n)>2**40||n%LAND.grid!==0)))reject('需要 3～8 个顶点，坐标须吸附到 2 米网格');
   if(!isConvex(p))reject('地皮只能是凸多边形，边界不能内凹或自交');
   const e=edges(p);for(let i=0;i<e.length;i++){const a=p[(i+p.length-1)%p.length],b=p[i],c=p[(i+1)%p.length];if(pointSegment(c,a,b)<EPS||pointSegment(a,b,c)<EPS)reject('边界不能折返或重叠');if(Math.hypot(e[i][0][0]-e[i][1][0],e[i][0][1]-e[i][1][1])<LAND.minEdge)reject('每条边至少 8 米');for(let j=i+1;j<e.length;j++)if(j!==i+1&&!(i===0&&j===e.length-1)&&segmentDistance(...e[i],...e[j])<LAND.minClearance-EPS)reject('边界不能自交，也不能形成不足 8 米的窄缝');}
   const left=Math.min(...p.map(v=>v[0])),right=Math.max(...p.map(v=>v[0])),bottom=Math.min(...p.map(v=>v[1])),top=Math.max(...p.map(v=>v[1])),width=right-left,depth=top-bottom;
   const cx=(left+right)/2,cz=(bottom+top)/2,area=Math.abs(e.reduce((sum,[a,b])=>sum+(a[0]-cx)*(b[1]-cz)-(b[0]-cx)*(a[1]-cz),0))/2;
-  if(area<LAND.minArea||area>LAND.maxArea)reject('面积须为 256～4096 平方米');
-  if(Math.max(width,depth)>LAND.maxSpan||Math.max(width,depth)/Math.min(width,depth)>4)reject('外接长宽不超过 96 米，长宽比不超过 4:1');
+  const minArea=limits.minArea??LAND.minArea,maxArea=limits.maxArea===null?Infinity:(limits.maxArea??LAND.maxArea),maxSpan=limits.maxSpan===null?Infinity:(limits.maxSpan??LAND.maxSpan),maxAspectRatio=limits.maxAspectRatio??4;
+  if(area<minArea||area>maxArea)reject(Number.isFinite(maxArea)?`面积须为 ${minArea}～${maxArea} 平方米`:`面积至少为 ${minArea} 平方米`);
+  if(Math.max(width,depth)>maxSpan||Math.max(width,depth)/Math.min(width,depth)>maxAspectRatio)reject(Number.isFinite(maxSpan)?`外接长宽不超过 ${maxSpan} 米，长宽比不超过 ${maxAspectRatio}:1`:`长宽比不超过 ${maxAspectRatio}:1`);
   if(area/(width*depth)<.35)reject('地皮过于细长或零碎，请调整顶点');
   return {polygon:p,area,cx,cz,width,depth,left,right,bottom,top};
 }

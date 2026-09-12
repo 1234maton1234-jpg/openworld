@@ -23,6 +23,7 @@ npm run dev
 3. 本机 Homepage URL 填 `http://127.0.0.1:8787`，Authorization callback URL 填 `http://127.0.0.1:8787/auth/github/callback`。
 4. 将 `GITHUB_CLIENT_ID` 和 `GITHUB_CLIENT_SECRET` 填入本机 `.env`。不要写进前端或提交进 Git。
 5. `ADMIN_GITHUB_IDS` 填管理员的 **GitHub 数字用户 ID**，多个以逗号分隔；可在 `https://api.github.com/users/你的用户名` 的 `id` 字段查看。
+   `UNLIMITED_PLOT_AREA_USER_IDS` 可为指定账号取消领地面积和跨度上限，多个 GitHub 数字用户 ID 以逗号分隔；道路、河流、公共间距和形状规则仍会校验。
 6. `npm start` 使用真实 GitHub OAuth。上线应另建生产 OAuth App，并将 Homepage、回调和 `PUBLIC_URL` 换成同一正式 HTTPS 域名。兼容旧域名时设置 `ALLOWED_ORIGINS`（逗号分隔的完整 HTTPS 来源，不支持通配符）；旧域名登录自动跳转到正式域名，Cookie 保持仅限当前主机，保存操作仍需 CSRF。多人连接使用同一白名单，左上角显示游戏 WebSocket RTT 和断线原因。
 
 认证使用一次性 state、PKCE、服务器端会话、HttpOnly Cookie 和写操作 CSRF 校验。仅查询 GitHub 公开身份，不请求仓库或邮箱权限，不保存 GitHub access token。实际 OAuth 登录需配置后由账号持有人完成；当前测试验证了回调保护与权限流程，未声称已完成真实 GitHub 端到端登录。

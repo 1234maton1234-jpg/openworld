@@ -2,10 +2,10 @@ import {polygonInfo,plotPolygon,polygonDistance,edges,inside,segmentDistance,LAN
 import {createWorldHydrology} from './coastal-hydrology.mjs';
 import {createUrbanTerrain} from './urban-terrain.mjs';
 import {RIVER_RESERVE} from './construction-layout.mjs';
-export function createLandCheck(planning,owned=[]){
+export function createLandCheck(planning,owned=[],limits=LAND){
   const water=createWorldHydrology(planning.hydrology),field=createUrbanTerrain(planning.terrain?.frozen||[],water,planning.terrain);
   return polygon=>{
-    const land=polygonInfo(polygon),reject=message=>{throw Object.assign(new Error(message),{status:409});};
+    const land=polygonInfo(polygon,limits),reject=message=>{throw Object.assign(new Error(message),{status:409});};
     for(const p of [...owned,...(planning.legacy||[])])if(polygonDistance(polygon,plotPolygon(p))<LAND.gap)reject(`与已领地皮之间须保留至少 ${LAND.gap} 米公共通道`);
     for(const p of owned){const access=p.entrance||(planning.regions||[]).flatMap(r=>r.lots).find(l=>l.x===p.x&&l.z===p.z)?.entrance;if(!access)continue;const [a,b]=access.points.map(v=>[v[0],v[2]]);if(inside(polygon,a)||inside(polygon,b)||edges(polygon).some(([c,d])=>segmentDistance(a,b,c,d)<4))reject('不能占用已有领地通往道路的公共入口');}
     const paths=planning.roads.flatMap(r=>(r.sections||[r]).flatMap(s=>s.points.slice(1).map((b,i)=>({a:[s.points[i][0],s.points[i][2]],b:[b[0],b[2]],ay:s.points[i][1],by:b[1],width:s.width||r.width,id:r.id,bridge:s.kind==='crossing'})))).filter(s=>Math.max(s.a[0],s.b[0])+s.width/2+24>=land.left&&Math.min(s.a[0],s.b[0])-s.width/2-24<=land.right&&Math.max(s.a[1],s.b[1])+s.width/2+24>=land.bottom&&Math.min(s.a[1],s.b[1])-s.width/2-24<=land.top);
@@ -18,8 +18,8 @@ export function createLandCheck(planning,owned=[]){
     if(entrance){const access=[entrance.points[0][0],entrance.points[0][2]],road=[entrance.points[1][0],entrance.points[1][2]];
       if(owned.some(p=>inside(plotPolygon(p),access)||edges(plotPolygon(p)).some(([a,b])=>segmentDistance(access,road,a,b)<4)))entrance=null;
     }
-    let min=Infinity,max=-Infinity;
-    for(let x=land.left;x<=land.right;x+=2)for(let z=land.bottom;z<=land.top;z+=2)if(inside(polygon,[x,z])){if(water.distance(x,z)<RIVER_RESERVE)reject('地皮涉及河流、海岸或护岸预留区');const h=field.height(x,z);min=Math.min(min,h);max=Math.max(max,h);}
+    let min=Infinity,max=-Infinity;const samples=(land.width/2+1)*(land.depth/2+1),step=Math.max(2,Math.ceil(Math.sqrt(samples/250000))*2);
+    for(let x=land.left;x<=land.right;x+=step)for(let z=land.bottom;z<=land.top;z+=step)if(inside(polygon,[x,z])){if(water.distance(x,z)<RIVER_RESERVE)reject('地皮涉及河流、海岸或护岸预留区');const h=field.height(x,z);min=Math.min(min,h);max=Math.max(max,h);}
     if(min<3||max-min>1)reject('地皮高差超过 1 米，请缩小范围或选择更平缓的位置');
     let elevation=(min+max)/2;
     if(entrance){const roadY=entrance.points[1][1],level=Math.max(roadY-.03*best,Math.min(roadY+.03*best,elevation));

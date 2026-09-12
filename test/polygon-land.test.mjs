@@ -16,3 +16,10 @@ test('concave parcel containment checks edges, not only vertices or bounding box
   assert.equal(containsPolygon(land,[[4,40],[40,4],[40,20]]),false);
   assert.equal(polygonDistance([[0,0],[20,0],[20,20],[0,20]],[[24,0],[44,0],[44,20],[24,20]]),4);
 });
+test('account limits can remove area and span caps without weakening shape rules',()=>{
+  const large=[[0,0],[200,0],[200,100],[0,100]],unlimited={maxArea:null,maxSpan:null};
+  assert.throws(()=>polygonInfo(large),/4096/);
+  assert.equal(polygonInfo(large,unlimited).area,20000);
+  assert.throws(()=>polygonInfo([[0,0],[400,0],[400,40],[0,40]],unlimited),/4:1/);
+  assert.throws(()=>polygonInfo([[0,0],[200,0],[200,100],[100,40],[0,100]],unlimited),/凸多边形/);
+});

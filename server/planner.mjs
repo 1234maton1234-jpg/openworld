@@ -38,16 +38,19 @@ export async function createPlanner(db){
     (await db.prepare('INSERT OR IGNORE INTO city_regions VALUES (?,?,?,?)').run(x,z,plan.version,JSON.stringify(plan)));return JSON.parse((await db.prepare('SELECT plan FROM city_regions WHERE x=? AND z=?').get(x,z)).plan);
   }
   const networkCache=new Map();
-  async function around(x,z){const center=regionAt(x*PLOT.cell,z*PLOT.cell),regions=[];for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++)regions.push((await region(center.x+dx,center.z+dz)));
-    const corridors=[];for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++)corridors.push(...roads(center.x+dx,center.z+dz));
-    const key=center.x+','+center.z;if(!networkCache.has(key)){if(networkCache.size>32)networkCache.clear();networkCache.set(key,refineShoreNetwork(buildRoadNetwork([...new Map([...corridors,...regions.flatMap(r=>r.roads)].map(r=>[r.id,r])).values()].map(archRoad)),hydrology,[...regions.flatMap(r=>r.lots),...legacy,...(await db.prepare('SELECT cx,cz,width,depth,entrance FROM plots').all()).map(p=>({...p,entrance:p.entrance?JSON.parse(p.entrance):null}))]));}
+  async function combine(minX,minZ,maxX,maxZ,key){const regions=[];for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)regions.push((await region(x,z)));
+    const corridors=[];for(let x=minX-1;x<=maxX+1;x++)for(let z=minZ-1;z<=maxZ+1;z++)corridors.push(...roads(x,z));
+    if(!networkCache.has(key)){if(networkCache.size>32)networkCache.clear();networkCache.set(key,refineShoreNetwork(buildRoadNetwork([...new Map([...corridors,...regions.flatMap(r=>r.roads)].map(r=>[r.id,r])).values()].map(archRoad)),hydrology,[...regions.flatMap(r=>r.lots),...legacy,...(await db.prepare('SELECT cx,cz,width,depth,entrance FROM plots').all()).map(p=>({...p,entrance:p.entrance?JSON.parse(p.entrance):null}))]));}
     const network=networkCache.get(key),lots=regions.flatMap(r=>r.lots).map(lot=>{
       const p=lot.entrance?.points.at(-1);if(!p)return lot;
       const road=network.find(r=>r.points.slice(1).some((b,i)=>{const a=r.points[i],dx=b[0]-a[0],dz=b[2]-a[2],length=dx*dx+dz*dz;if(length<1e-8)return false;const t=((p[0]-a[0])*dx+(p[2]-a[2])*dz)/length;return t>=0&&t<=1&&Math.hypot(p[0]-a[0]-t*dx,p[2]-a[2]-t*dz)<.05&&Math.abs(p[1]-a[1]-t*(b[1]-a[1]))<.05;}));
       return road?{...lot,entrance:{...lot.entrance,roadId:road.id}}:lot;
     });
-    return {terrain,hydrology:water,regions,lots,roads:network,parks:regions.flatMap(r=>r.parks),legacy:legacy.filter(p=>Math.abs(p.cx-x*70)<1500&&Math.abs(p.cz-z*70)<1500)};
+    const bounds=[Math.min(...regions.map(r=>r.bounds[0])),Math.min(...regions.map(r=>r.bounds[1])),Math.max(...regions.map(r=>r.bounds[2])),Math.max(...regions.map(r=>r.bounds[3]))];
+    return {terrain,hydrology:water,regions,lots,roads:network,parks:regions.flatMap(r=>r.parks),legacy:legacy.filter(p=>p.cx>bounds[0]-1500&&p.cx<bounds[2]+1500&&p.cz>bounds[1]-1500&&p.cz<bounds[3]+1500)};
   }
+  async function around(x,z){const center=regionAt(x*PLOT.cell,z*PLOT.cell);return combine(center.x-1,center.z-1,center.x+1,center.z+1,center.x+','+center.z);}
+  async function withinBounds({left,bottom,right,top}){const a=regionAt(left-32,bottom-32),b=regionAt(right+32,top+32),count=(b.x-a.x+1)*(b.z-a.z+1);if(count>64)throw Object.assign(new Error('范围过大，单次圈地超过服务器安全校验范围'),{status:400});return combine(a.x,a.z,b.x,b.z,`bounds:${a.x},${a.z},${b.x},${b.z}`);}
   async function lot(x,z){return (await region(Math.floor(x/8),Math.floor(z/8))).lots.find(p=>p.x===x&&p.z===z);}
-  return {around,lot,region,legacy};
+  return {around,withinBounds,lot,region,legacy};
 }

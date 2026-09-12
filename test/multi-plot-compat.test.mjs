@@ -20,6 +20,17 @@ test('mine API exposes per-account plot capacity and keeps the default limit at 
   }finally{await new Promise(resolve=>server.close(resolve));await store.close();rmSync(dir,{recursive:true,force:true});}
 });
 
+test('mine API exposes unlimited parcel area only for configured owners',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'plot-rules-')),config={dataDir:dir,url:'http://127.0.0.1:8787',adminIds:[],unlimitedPlotAreaUserIds:['1001']},{app,store}=await createApp(config);
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));const base='http://127.0.0.1:'+server.address().port;
+  try{
+    const privileged=await testSession(store,'1001'),regular=await testSession(store,'1002');
+    assert.deepEqual((await (await fetch(base+'/api/mine',{headers:{Cookie:privileged.cookie}})).json()).plotRules,{minArea:256,maxArea:null,maxSpan:null,maxAspectRatio:4});
+    assert.deepEqual((await (await fetch(base+'/api/mine',{headers:{Cookie:regular.cookie}})).json()).plotRules,{minArea:256,maxArea:4096,maxSpan:96,maxAspectRatio:4});
+    assert.equal((await store.getPlotRules('1001')).maxArea,null);assert.equal((await store.getPlotRules('1002')).maxArea,4096);
+  }finally{await new Promise(resolve=>server.close(resolve));await store.close();rmSync(dir,{recursive:true,force:true});}
+});
+
 test('a granted owner can claim, publish and delete plots independently',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'plot-grant-')),{store}=await createApp({dataDir:dir,url:'http://127.0.0.1:8787',adminIds:[]});
   try{

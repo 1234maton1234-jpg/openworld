@@ -19,7 +19,7 @@ export async function createApp(config){
   config.allowedOrigins=normalizeOrigins(config.allowedOrigins,config.production);
   const data=resolve(config.dataDir),uploadDirectory=join(data,'uploads');mkdirSync(uploadDirectory,{recursive:true});
   const uploads=config.assetStore||(config.r2?r2AssetStorage(config.r2):localAssetStorage(uploadDirectory));
-  const store=(await createStore(config.databaseUrl||join(data,'town.sqlite'))),app=express();app.disable('x-powered-by');
+  const store=(await createStore(config.databaseUrl||join(data,'town.sqlite'),{unlimitedPlotAreaUserIds:config.unlimitedPlotAreaUserIds})),app=express();app.disable('x-powered-by');
   try{for(const grant of config.plotGrants||[]){let owner=(await store.db.prepare('SELECT owner FROM plot_grants WHERE name=?').get(grant.name))?.owner;if(!owner){const matches=await store.db.prepare('SELECT DISTINCT owner FROM plots WHERE name=?').all(grant.name);if(matches.length!==1)throw new Error(`Plot grant requires exactly one territory named "${grant.name}"; found ${matches.length}.`);owner=matches[0].owner;await store.db.prepare('INSERT INTO plot_grants(name,owner) VALUES (?,?)').run(grant.name,owner);}await store.setPlotLimit(owner,grant.limit);}}catch(error){await store.close();throw error;}
   app.use((req,res,next)=>{
     res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
@@ -32,7 +32,7 @@ export async function createApp(config){
   try{if(config.devAvatarFile){const {installDevelopmentAvatar}=await import('./development-avatar.mjs');await installDevelopmentAvatar(app,config);}await installAuth(app,store,config);await installCliApi(app,store,uploads);await installTeleports(app,store);}catch(error){await store.close();throw error;}
   app.get('/api/world',async (req,res)=>{const x=coordinate(Number(req.query.x??0)),z=coordinate(Number(req.query.z??0)),r=Number(req.query.radius??3);if(!Number.isInteger(r)||r<1||r>4)fail(400,'加载范围无效');res.json({plots:(await store.world(x,z,r)),planning:{...(await store.planner.around(x,z)),lots:[],freeform:true},rules:RULES});});
   async function ownedPlot(req){if(req.query.plot)return store.getPlot(req.user.id,req.query.plot);const plots=await store.getPlots(req.user.id);if(plots.length>1)fail(409,'请先选择要操作的领地');return plots[0];}
-  app.get('/api/mine',requireUser,async (req,res)=>{const plots=await store.getPlots(req.user.id);res.json({plots,plot:plots[0]||null,plotLimit:await store.getPlotLimit(req.user.id),submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))});});
+  app.get('/api/mine',requireUser,async (req,res)=>{const plots=await store.getPlots(req.user.id);res.json({plots,plot:plots[0]||null,plotLimit:await store.getPlotLimit(req.user.id),plotRules:await store.getPlotRules(req.user.id),submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))});});
   app.patch('/api/plots/mine',requireUser,async (req,res)=>{
     const {name,description}=req.body||{};if(typeof name!=='string'||!name.trim()||name.trim().length>60||typeof description!=='string'||description.trim().length>1000)fail(400,'名称需为 1–60 字，介绍不超过 1000 字');
     const plot=await ownedPlot(req);if(!plot)fail(404,'你尚未领取地皮');
@@ -43,7 +43,7 @@ export async function createApp(config){
     for(const id of ids)try{await removeModel(uploads,id);}catch(error){if(error.code!=='ENOENT')console.error('Plot asset cleanup failed:',error.code);}
     res.json({ok:true});
   });
-  app.post('/api/plots/check',requireUser,async (req,res)=>{(await store.rate('land-check:'+req.user.id,60));res.json((await store.checkLand(req.body?.polygon)));});
+  app.post('/api/plots/check',requireUser,async (req,res)=>{(await store.rate('land-check:'+req.user.id,60));res.json((await store.checkLand(req.user.id,req.body?.polygon)));});
   app.post('/api/plots/claim',requireUser,async (req,res)=>{(await store.rate('claim:'+req.user.id,10));res.status(201).json(req.body?.polygon?(await store.claimLand(req.user.id,req.body.polygon)):(await store.claim(req.user.id,req.body?.x,req.body?.z)));});
   app.post('/api/submissions',requireUser,(req,res)=>res.status(410).json({error:'网页上传已停用，请使用 openworld CLI'}));
   app.get('/api/admin/submissions',requireAdmin,async (req,res)=>{
