@@ -1,5 +1,5 @@
 export const MODEL_RESOURCE_RULES=Object.freeze({
-  maxBytes:12*1024*1024,maxTriangles:100000,maxNodes:512,maxPrimitives:200,
+  maxBytes:32*1024*1024,maxTriangles:100000,maxNodes:512,maxPrimitives:200,
   maxVertices:300000,maxMaterials:64,maxTextures:16,maxTextureSize:2048,
   maxTexturePixels:16*1024*1024,maxDecodedAccessorBytes:32*1024*1024,
   maxAnimations:32,maxSkins:4,maxJointsPerSkin:128

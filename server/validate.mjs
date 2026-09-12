@@ -5,7 +5,7 @@ import {validateBuildingMotion} from './building-motion.mjs';
 import {inspectResourceDeclarations} from '../shared/model-resource-rules.mjs';
 
 export async function validateModel(bytes,plot=null,{avatar=false,vehicle=false}={}){
-  if(!Buffer.isBuffer(bytes)||bytes.length<28||bytes.length>RULES.maxBytes||bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(4)!==2||bytes.readUInt32LE(8)!==bytes.length)fail(400,'请上传不超过 12 MB 的有效 GLB 2.0 文件');
+  if(!Buffer.isBuffer(bytes)||bytes.length<28||bytes.length>RULES.maxBytes||bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(4)!==2||bytes.readUInt32LE(8)!==bytes.length)fail(400,'请上传不超过 32 MB 的有效 GLB 2.0 文件');
   return new Promise((resolve,reject)=>{
     const worker=new Worker(new URL(import.meta.url),{workerData:{bytes,plot,avatar,vehicle},resourceLimits:{maxOldGenerationSizeMb:128}});
     const timer=setTimeout(()=>{worker.terminate();reject(Object.assign(new Error('模型校验超时，请简化模型'),{status:400}));},12000);

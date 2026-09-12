@@ -73,7 +73,7 @@ export async function createApp(config){
   app.use((error,req,res,next)=>{
     if(res.headersSent)return next(error);
     const status=error.type==='entity.too.large'?413:error.status||500;
-    res.set('Cache-Control','no-store').status(status).json({error:status===413?'文件超过 12 MB 限制':status<500?error.message:'服务暂时不可用，请稍后重试'});
+    res.set('Cache-Control','no-store').status(status).json({error:status===413?'文件超过 32 MB 限制':status<500?error.message:'服务暂时不可用，请稍后重试'});
     if(status>=500)console.error(error.message);
   });
   return {app,store};

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {inspectResourceDeclarations,MODEL_RESOURCE_RULES} from '../shared/model-resource-rules.mjs';
 
+test('GLB uploads allow a 32 MiB transport budget',()=>assert.equal(MODEL_RESOURCE_RULES.maxBytes,32*1024*1024));
+
 test('common resource limits account for decoded sparse data before allocating it',()=>{
   const accessor={count:300000,type:'VEC3',componentType:5126,sparse:{count:1}};
   assert.equal(inspectResourceDeclarations({accessors:[accessor]}).decodedAccessorBytes,3600000);

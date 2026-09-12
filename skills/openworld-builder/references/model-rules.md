@@ -33,7 +33,7 @@ Export a separate empty node for each sitting place, parented under the building
 ## GLB resources
 
 - GLB 2.0, one scene, triangle primitives, ordinary PBR materials.
-- All categories: maximum 12 MiB, 100000 rendered triangles, 300000 rendered vertices, 512 nodes, 200 rendered primitives, 64 materials and 16 textures. Accessors at most 300000 elements; total decoded accessor allocation, including sparse data and animation, at most 32 MiB. At most 32 animation clips; avatars allow 4 skins and 128 joints per skin.
+- All categories: maximum 32 MiB, 100000 rendered triangles, 300000 rendered vertices, 512 nodes, 200 rendered primitives, 64 materials and 16 textures. Accessors at most 300000 elements; total decoded accessor allocation, including sparse data and animation, at most 32 MiB. At most 32 animation clips; avatars allow 4 skins and 128 joints per skin.
 - No extensions (including Draco, meshopt and material extensions), external URIs or external buffers. Buildings must not contain skins, animations or morph targets. Avatar upload accepts skins and animation clips under the contract below.
 - Embedded PNG/JPEG only, maximum 2048×2048 each, total at most 16×1024×1024 pixels. No animated images.
 - Finite coordinates and valid glTF required. Keep bounds within ±10000 m of the model origin; an empty or microscopic model is rejected.
