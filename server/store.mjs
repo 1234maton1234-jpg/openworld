@@ -10,7 +10,7 @@ export const RULES={width:PLOT.width,depth:PLOT.depth,height:PLOT.height,cell:PL
 export function fail(status,message){throw Object.assign(new Error(message),{status});}
 export function coordinate(v){if(!Number.isSafeInteger(v)||Math.abs(v)>RULES.maxCoordinate)fail(400,'地块坐标必须为有效整数');return v;}
 function plotCoordinates(key){const match=/^(-?\d+),(-?\d+)$/.exec(String(key||''));if(!match)fail(400,'领地标识无效');return [coordinate(Number(match[1])),coordinate(Number(match[2]))];}
-export async function createStore(path){
+export async function createStore(path,{unlimitedPlotAreaUserIds=[]}={}){
   const db=await openDatabase(path),transaction=fn=>db.transaction(fn);
   try{return await db.transaction(async()=>{await db.exec(`
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,login TEXT NOT NULL);
@@ -65,6 +65,8 @@ export async function createStore(path){
   const getPlots=async owner=>(await db.prepare('SELECT * FROM plots WHERE owner=? ORDER BY x,z').all(owner)).map(decode);
   const getPlot=async (owner,key)=>{if(!key)return (await getPlots(owner))[0];const [x,z]=plotCoordinates(key);return decode(await db.prepare('SELECT * FROM plots WHERE owner=? AND x=? AND z=?').get(owner,x,z));};
   const getPlotLimit=async owner=>(await db.prepare('SELECT max_plots FROM plot_quotas WHERE owner=?').get(owner))?.max_plots||RULES.maxPlotsPerOwner;
+  const unlimitedPlotAreaOwners=new Set(unlimitedPlotAreaUserIds.map(String));
+  const getPlotRules=async owner=>({minArea:LAND.minArea,maxArea:unlimitedPlotAreaOwners.has(String(owner))?null:LAND.maxArea,maxSpan:unlimitedPlotAreaOwners.has(String(owner))?null:LAND.maxSpan,maxAspectRatio:4});
   async function setPlotLimit(owner,max){if(!Number.isSafeInteger(max)||max<1||max>100)fail(400,'领地额度须为 1～100');if(!await getUser(owner))fail(404,'账号不存在');await db.prepare('INSERT INTO plot_quotas(owner,max_plots) VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET max_plots=excluded.max_plots').run(owner,max);return max;}
   async function deletePlot(owner,key){const plot=await getPlot(owner,key),ids=(await transaction(async ()=>{
     if(!plot)fail(404,'你尚未领取这块地皮');
@@ -84,8 +86,8 @@ export async function createStore(path){
     for(const row of (await db.prepare('SELECT * FROM plots').all()).map(decode))if(polygonDistance(plotPolygon(terrain),plotPolygon(row))<LAND.gap)fail(409,'与已有领地或公共间距重叠');
     (await db.prepare('INSERT INTO plots(x,z,owner,elevation,cx,cz) VALUES (?,?,?,?,?,?)').run(x,z,owner,terrain.elevation,terrain.cx,terrain.cz));return (await getPlot(owner,x+','+z));
   }));}
-  async function checkLand(polygon){const info=polygonInfo(polygon),x=coordinate(Math.round(info.cx/70)),z=coordinate(Math.round(info.cz/70));return createLandCheck((await planner.around(x,z)),(await db.prepare('SELECT * FROM plots').all()).map(decode))(polygon);}
-  async function claimLand(owner,polygon){return (await transaction(async ()=>{const limit=await getPlotLimit(owner);if((await getPlots(owner)).length>=limit)fail(409,limit===1?'每个账号只能领取一块地皮':'已达到当前账号的领地上限');const land=(await checkLand(polygon));let x=Math.round(land.cx/70),z=Math.round(land.cz/70);while((await db.prepare('SELECT 1 FROM plots WHERE x=? AND z=?').get(x,z)))coordinate(++x);(await db.prepare('INSERT INTO plots(x,z,owner,elevation,cx,cz,polygon,entrance,width,depth,area) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(x,z,owner,land.elevation,land.cx,land.cz,JSON.stringify(land.polygon),JSON.stringify(land.entrance),land.width,land.depth,land.area));return (await getPlot(owner,x+','+z));}));}
+  async function checkLand(ownerOrPolygon,maybePolygon){const owner=maybePolygon===undefined?null:ownerOrPolygon,polygon=maybePolygon===undefined?ownerOrPolygon:maybePolygon,rules=await getPlotRules(owner),info=polygonInfo(polygon,rules);coordinate(Math.round(info.cx/70));coordinate(Math.round(info.cz/70));return createLandCheck((await planner.withinBounds(info)),(await db.prepare('SELECT * FROM plots').all()).map(decode),rules)(polygon);}
+  async function claimLand(owner,polygon){return (await transaction(async ()=>{const limit=await getPlotLimit(owner);if((await getPlots(owner)).length>=limit)fail(409,limit===1?'每个账号只能领取一块地皮':'已达到当前账号的领地上限');const land=(await checkLand(owner,polygon));let x=Math.round(land.cx/70),z=Math.round(land.cz/70);while((await db.prepare('SELECT 1 FROM plots WHERE x=? AND z=?').get(x,z)))coordinate(++x);(await db.prepare('INSERT INTO plots(x,z,owner,elevation,cx,cz,polygon,entrance,width,depth,area) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(x,z,owner,land.elevation,land.cx,land.cz,JSON.stringify(land.polygon),JSON.stringify(land.entrance),land.width,land.depth,land.area));return (await getPlot(owner,x+','+z));}));}
   async function canSubmit(owner,key){const plot=await getPlot(owner,key);if(!plot)fail(409,'请先领取地块');if((await db.prepare("SELECT 1 FROM submissions WHERE plot_x=? AND plot_z=? AND status='pending'").get(plot.x,plot.z)))fail(409,'这块领地已有建筑等待审核');if((await db.prepare('SELECT count(*) AS n FROM submissions WHERE owner=?').get(owner)).n>=20)fail(409,'已达到首版每人 20 个建筑版本的存储限额');return plot;}
   async function submitToPlot(owner,key,title,metrics,id=randomUUID(),expectedRevision){return (await transaction(async ()=>{if(expectedRevision!==undefined&&expectedRevision!==plotRevision(owner,key))fail(409,'地皮已删除，请重新上传');const plot=await canSubmit(owner,key);await db.prepare("INSERT INTO submissions(id,owner,title,status,metrics,created,plot_x,plot_z) VALUES (?,?,?,'pending',?,?,?,?)").run(id,owner,title,JSON.stringify(metrics),Date.now(),plot.x,plot.z);return (await getSubmission(id));}));}
   async function submit(owner,title,metrics,id=randomUUID(),expectedRevision){const plot=await getPlot(owner);if(!plot)fail(409,'请先领取地块');return submitToPlot(owner,plot.key,title,metrics,id,expectedRevision);}
@@ -96,6 +98,6 @@ export async function createStore(path){
   }));}
   const world=async (x,z,r)=>(await db.prepare(`SELECT p.*,u.login,s.title,s.metrics FROM plots p JOIN users u ON p.owner=u.id LEFT JOIN submissions s ON p.published=s.id WHERE p.cx BETWEEN ? AND ? AND p.cz BETWEEN ? AND ?`).all((x-r-8)*70,(x+r+8)*70,(z-r-8)*70,(z+r+8)*70)).map(decode);
   async function rate(key,max,window=60000){const now=Date.now();await db.prepare('DELETE FROM rate_limits WHERE expires<?').run(now);const row=await db.prepare('INSERT INTO rate_limits VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=rate_limits.count+1 RETURNING count').get(key,now+window);if(row.count>max)fail(429,'操作太频繁，请稍后再试');}
-  return {db,planner,transaction,getUser,getPlot,getPlots,getPlotLimit,setPlotLimit,deletePlot,plotRevision,getSubmission,upsertUser,claim,claimLand,checkLand,canSubmit,submit,submitToPlot,review,world,rate,close:async ()=>(await db.close())};
+  return {db,planner,transaction,getUser,getPlot,getPlots,getPlotLimit,getPlotRules,setPlotLimit,deletePlot,plotRevision,getSubmission,upsertUser,claim,claimLand,checkLand,canSubmit,submit,submitToPlot,review,world,rate,close:async ()=>(await db.close())};
   });}catch(error){await db.close();throw error;}
 }
