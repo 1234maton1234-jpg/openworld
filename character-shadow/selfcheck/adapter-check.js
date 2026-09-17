@@ -355,6 +355,151 @@ adapter.attachScene(scene);
     !!captured && !fs.includes('#include <lights_fragment_begin>'));
 }
 
+// ── 11. 手工换材质 ≡ overrideMaterial（蒙皮 / 实例化两个形状）──
+// `update()` 为了不再遍历整棵场景，改成"只传角色子树 + **手工**把材质换成深度材质"。
+// 这个最小宿主里的角色是个普通 `Mesh`，覆盖不到**接进宿主后**一定会踩的两个形状：
+//   · **SkinnedMesh** —— 宿主角色通常就是 glTF 骨骼动画。蒙皮靠 `object.isSkinnedMesh`
+//     推出的 `USE_SKINNING` define 加骨架纹理，材质换得不对，它会**悄悄退回绑定
+//     姿势** —— 不报错、不警告，只是姿势不对
+//   · **InstancedMesh** —— 实例矩阵在 `object.instanceMatrix` 上，与材质无关
+// 判据是"两条路渲出来的图**逐像素相同**"，不是"看着差不多"。
+//
+// 下面 `renderTheOldWay` 是**刻意保留的参照物**，不是忘了删的死代码。
+{
+  const probeOf = () => { const p = adapter.probe(); return `${p.count}/${p.deepest}`; };
+
+  /** **上一版**的写法：`scene.overrideMaterial` + 传整个 scene */
+  const renderTheOldWay = () => {
+    const sh = adapter.shadow;
+    sh._clearNow();                    // 与 update() 里是同一段清理
+    const prevOverride = scene.overrideMaterial;
+    const prevBackground = scene.background;
+    scene.overrideMaterial = sh._depthMaterial;
+    scene.background = null;
+    renderer.render(scene, sh.cam);
+    scene.overrideMaterial = prevOverride;
+    scene.background = prevBackground;
+  };
+
+  const abOn = (label, makeRoot) => {
+    // 旧写法是靠**相机图层**从整个场景里筛出角色的。前面几节挂过的角色
+    // （charA / charB）、以及上一轮 abOn 留下的那个 root，子树都还开着 LAYER ——
+    // 不清掉的话旧写法会把它们一起画进来，两条路画的不是同一批东西，比对就没意义。
+    // （"不用筛"正是新写法的好处，但比对时必须先把条件拉平。）
+    scene.traverse((o) => o.layers.disable(CharacterShadowAdapter.LAYER));
+
+    const root = makeRoot();
+    scene.add(root);
+    adapter.attachCharacter(root);      // LAYER 重新开在 root 子树上
+    adapter.update();
+    const nowWay = probeOf();
+
+    // 材质放回去了吗 —— 放不回去，角色会顶着深度材质进主渲染（整块灰）
+    let leaked = 0;
+    root.traverse((o) => {
+      if (!o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (mats.includes(adapter.shadow._depthMaterial)) leaked++;
+    });
+    check(`update() 之后材质已放回原引用（${label}）`, leaked === 0, `残留 ${leaked} 处`);
+
+    renderTheOldWay();
+    const oldWay = probeOf();
+    check(`手工换材质 ≡ overrideMaterial，逐像素相同 —— ${label}`, nowWay === oldWay,
+      `新=${nowWay} 旧=${oldWay}`);
+  };
+
+  // 蒙皮：骨骼摆到**远离绑定姿势**的位置。不摆开的话，"蒙皮失效退回绑定姿势"
+  // 和"蒙皮正常"渲出来是同一张图，这条断言就等于没测。
+  abOn('SkinnedMesh', () => {
+    const geo = new THREE.BoxGeometry(0.8, 2, 0.8, 2, 6, 2);
+    const pos = geo.attributes.position;
+    const si = [];
+    const sw = [];
+    for (let i = 0; i < pos.count; i++) {
+      const t = THREE.MathUtils.clamp((pos.getY(i) + 1) / 2, 0, 1); // 0=底 1=顶
+      si.push(0, 1, 0, 0);
+      sw.push(1 - t, t, 0, 0);
+    }
+    geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+    geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+
+    const g = new THREE.Group();
+    const b0 = new THREE.Bone();
+    b0.position.set(0, -1, 0);
+    const b1 = new THREE.Bone();
+    b1.position.set(0, 1, 0);
+    b0.add(b1);
+    const mesh = new THREE.SkinnedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x44cc88 }));
+    g.add(mesh);
+    mesh.add(b0);
+    mesh.bind(new THREE.Skeleton([b0, b1]));  // 绑定姿势 = 竖直
+    b1.rotation.z = 1.2;                      // 之后才摆开
+    g.updateMatrixWorld(true);
+    return g;
+  });
+
+  abOn('InstancedMesh', () => {
+    const g = new THREE.Group();
+    const im = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.5, 1.2, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0xcc8844 }), 3
+    );
+    const m4 = new THREE.Matrix4();
+    [-1, 0.15, 1.05].forEach((x, i) => im.setMatrixAt(i, m4.makeTranslation(x, 0.6, 0)));
+    im.instanceMatrix.needsUpdate = true;
+    g.add(im);
+    return g;
+  });
+
+  // 角色被藏起来（第一人称 / 过场动画）时**不该还有影子**。
+  //
+  // 这里藏的是角色的**祖先**、不是角色自己 —— three 的 `projectObject` 是
+  // "父节点 `visible === false` 就剪掉整棵子树"，从场景根开始遍历时这条自动成立；
+  // 改成只遍历角色子树之后就少了这一环，所以才要 `_effectivelyVisible()`
+  // 自己走一遍父链。只判 `character.visible` 的写法在这里会漏（父看不见，子照样被画）。
+  {
+    scene.traverse((o) => o.layers.disable(CharacterShadowAdapter.LAYER));
+    const wrapper = new THREE.Group();
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 1.7, 0.6),
+      new THREE.MeshStandardMaterial({ color: 0xaa5555 })
+    );
+    body.position.y = 0.85;
+    g.add(body);
+    wrapper.add(g);
+    scene.add(wrapper);
+    adapter.attachCharacter(g);          // 角色是 g，wrapper 是它的祖先
+
+    adapter.update();
+    const shown = probeOf();
+    wrapper.visible = false;
+    adapter.update();
+    const hidden = probeOf();
+    wrapper.visible = true;
+    adapter.update();
+
+    check('祖先被隐藏时图里没有占位（父链可见性会剪掉整棵子树）',
+      !shown.startsWith('0/') && hidden.startsWith('0/'), `可见=${shown} 祖先隐藏=${hidden}`);
+  }
+
+  // `update()` 不该再碰 scene 的状态。以前要临时改 overrideMaterial / background
+  // 再改回来 —— 那是"改完忘了还"的经典出错点；而且传 scene 会连带触发宿主的
+  // `scene.onBeforeRender`，拿它驱动 CSM 的宿主就被多调了一次。
+  scene.overrideMaterial = null;
+  scene.background = null;
+  let sceneHooks = 0;
+  const realOnBefore = scene.onBeforeRender;
+  scene.onBeforeRender = () => { sceneHooks++; };
+  adapter.update();
+  scene.onBeforeRender = realOnBefore;
+  check('update() 不触发 scene.onBeforeRender（宿主用它驱动 CSM 时不会被多调一次）',
+    sceneHooks === 0, `被调了 ${sceneHooks} 次`);
+  check('update() 不改动 scene.overrideMaterial / background（不再有要还回去的状态）',
+    scene.overrideMaterial === null && scene.background === null);
+}
+
 // ── 输出 ────────────────────────────────────────────────────
 const pre = document.createElement('pre');
 pre.id = 'out';

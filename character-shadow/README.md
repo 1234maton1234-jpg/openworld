@@ -61,13 +61,13 @@ DEBUGGING.md       症状 → 原因对照表；哪些还没验证过
 VERIFICATION.md    A/B 数据、回归读数、自检结果、复现命令
 
 src/lighting/shadow/
-  CharacterShadow.js           算法本体：建图、专用相机、着色器注入（598 行）
-  CharacterShadowAdapter.js    接入层：什么时候画、哪些东西进来、挂宿主哪些钩子（336 行）
+  CharacterShadow.js           算法本体：建图、专用相机、着色器注入（765 行）
+  CharacterShadowAdapter.js    接入层：什么时候画、哪些东西进来、挂宿主哪些钩子（349 行）
                                ★ 要 new 的是这个，不要直接用 CharacterShadow
 
 selfcheck/
   adapter-check.html           自检页（开发者工具，**不要**接进产品 build 入口）
-  adapter-check.js             36 条断言 + 一个最小宿主（地面 + 方盒当角色 + 一盏平行光）
+  adapter-check.js             43 条断言 + 一个最小宿主（地面 + 方盒当角色 + 一盏平行光）
   package.json / vite.config.js  把这个自检单独打成离线单页用（不影响仓库根的 CLI）
 
 images/char-shadow-softness-alignment.png
@@ -87,7 +87,7 @@ npm run build && npm run preview
 # 浏览器打开终端给出的地址
 ```
 
-必须看到最后一行 **`合计 36 通过 / 0 失败`**。有 FAIL 就把那一行原文发出来。
+必须看到最后一行 **`合计 43 通过 / 0 失败`**。有 FAIL 就把那一行原文发出来。
 自检自带一个最小宿主，覆盖最容易**静默出错**的那几条：流式新材质补注入、
 换角色复用 RT、XR 守卫、以及注入出来的 GLSL 的形状。
 

@@ -232,6 +232,14 @@ export class CharacterShadow {
     this._box = new THREE.Box3();
     this._clearColor = new THREE.Color();
 
+    /**
+     * 每帧临时换材质的账本，扁平表 `[obj, mat, idx, orig, …]`：
+     * `idx >= 0` = 换的是**数组材质**里的第 idx 个槽位，`idx < 0` = 整个 `obj.material`。
+     *
+     * **复用同一个数组**：这是每帧都走的路径，不能每次 new（见 `_swapToDepth`）。
+     */
+    this._swaps = [];
+
     this._setupLayers();
 
     // 构造期先清一次（理由见 `_clearTarget`）。必须在 RT 建好之后。
@@ -437,13 +445,78 @@ export class CharacterShadow {
     return { count: n, deepest };
   }
 
+  /**
+   * 角色这棵子树此刻**在画面上可见**吗。
+   *
+   * 为什么要自己走一遍父链：three 的 `projectObject` 一进门就是
+   * `if ( object.visible === false ) return;` —— **父节点不可见会把整棵子树剪掉**。
+   * 从场景根开始遍历时这一条自动成立，而从 `this.character` 开始就少了它，
+   * 于是"把角色藏起来"（第一人称、过场动画）之后影子还赖在地上。
+   * 父链很短，每帧走一遍不构成开销。
+   */
+  _effectivelyVisible() {
+    for (let o = this.character; o; o = o.parent) {
+      if (o.visible === false) return false;
+    }
+    return true;
+  }
+
+  /**
+   * 把角色子树里该用深度材质画的材质**临时**换成 `_depthMaterial`。
+   *
+   * 为什么不用 `scene.overrideMaterial` 了：那个 API 只有传进去的是 `Scene` 才生效，
+   * 而传 Scene 就得让 three 从场景根递归遍历**整棵场景树**。宿主是流式开放世界，
+   * 场景物件数量比角色高出几个数量级，这一趟每帧白走。传 `this.character`
+   * 就只遍历角色这棵子树。
+   *
+   * 换的判据是**照抄 three 的**，不能凭感觉写（三条都能对上 `three.module.js`）：
+   *   · 只有 `allowOverride === true` 的材质才会被 override 换掉 —— `renderObjects` 里
+   *     写的是 `material.allowOverride === true && overrideMaterial !== null`
+   *   · 不可见的材质原本**连渲染列表都进不去**（`material.visible` 为假时被跳过），
+   *     换掉它等于凭空把它画回来
+   *   · 数组材质（多材质分组）**按槽位**换：整份换成一个材质会让 three 走非数组分支，
+   *     把整个几何体当成一个 draw call 画，丢掉 `geometry.groups` 的分段，
+   *     和 override 的"逐组换"对不上
+   */
+  _swapToDepth() {
+    const s = this._swaps;
+    const depth = this._depthMaterial;
+    // 与 three 的两处判据逐字对应：truthy 的 visible + 严格 true 的 allowOverride
+    const swappable = (m) => !!m && !!m.visible && m.allowOverride === true;
+
+    s.length = 0;
+    this.character.traverse((o) => {
+      const m = o.material;
+      // Points / Line 也吃 overrideMaterial，一并算上；Group / Bone 没有 material
+      if (!m || (!o.isMesh && !o.isPoints && !o.isLine)) return;
+      if (Array.isArray(m)) {
+        for (let i = 0; i < m.length; i++) {
+          if (!swappable(m[i])) continue;
+          s.push(o, m, i, m[i]);
+          m[i] = depth;
+        }
+      } else if (swappable(m)) {
+        s.push(o, m, -1, m);
+        o.material = depth;
+      }
+    });
+  }
+
+  /** 把 `_swapToDepth()` 换掉的材质按原样放回去。**每一帧都必须走到** */
+  _restoreMaterial() {
+    const s = this._swaps;
+    for (let i = 0; i < s.length; i += 4) {
+      if (s[i + 2] < 0) s[i].material = s[i + 3];
+      else s[i + 1][s[i + 2]] = s[i + 3];
+    }
+    s.length = 0;
+  }
+
   /** 渲一趟深度。角色的世界矩阵必须已是当前帧的。 */
   update() {
     if (!this._updateCamera()) return;
 
-    const { renderer, scene } = this;
-    const prevOverride = scene.overrideMaterial;
-    const prevBackground = scene.background;
+    const { renderer } = this;
     const prevAutoClear = renderer.autoClear;
     const prevTarget = renderer.getRenderTarget();
     renderer.getClearColor(this._clearColor);
@@ -459,19 +532,33 @@ export class CharacterShadow {
     // 两边分开写迟早会漂，而这两处漂了的后果正好是最难查的那种（全黑 / 全亮）
     this._clearNow();
 
-    if (this.visible) {
-      // 前向渲染路径会用**传入相机的 layers** 过滤 —— 传 charCam 就只剩角色。
-      // 背景必须摘掉：它会画一张全屏四边形，直接盖掉刚清好的深度底板。
-      scene.overrideMaterial = this._depthMaterial;
-      scene.background = null;
-      renderer.render(scene, this.cam);
+    if (this.visible && this._effectivelyVisible()) {
+      // 只画**角色这棵子树**，不传整个 scene。三个理由：
+      //   · 遍历量从 O(整棵场景) 降到 O(角色) —— 宿主是流式开放世界，差一个数量级
+      //   · 传 scene 会连带触发 `scene.onBeforeRender/onAfterRender`，
+      //     宿主若拿它们驱动 CSM 之类的每帧更新，就会被多调一次
+      //   · 传 scene 时 three 照常会跑一整轮**阴影图**（`lights.length !== 0`
+      //     不会早退），主渲染那趟还要再跑一遍 —— 白画一遍全部投射体
+      //
+      // 传进来的不是 Scene，three 那边是有守卫的（`scene.isScene === true ? … : null`）：
+      // overrideMaterial / background / fog 一律取 null，所以不必再去改 scene 的状态，
+      // 也就没有了"改完要记得还回去"这条出错路径。
+      //
+      // 相机 layers 仍在过滤（前向路径按 `cam.layers` 判），这里是第二道保险。
+      this._swapToDepth();
+      try {
+        renderer.render(this.character, this.cam);
+      } finally {
+        // 材质**一定要**放回去，而且要用 finally：以前用 `scene.overrideMaterial`
+        // 时同样的位置出错最多是"影子不对"，现在放不回去的后果是角色顶着深度材质
+        // 进主渲染 —— 整个角色变成一块灰。风险更高，就不留裸奔路径。
+        this._restoreMaterial();
+      }
     }
 
     renderer.setRenderTarget(prevTarget);
     renderer.setClearColor(this._clearColor, prevAlpha);
     renderer.autoClear = prevAutoClear;
-    scene.overrideMaterial = prevOverride;
-    scene.background = prevBackground;
     renderer.shadowMap.needsUpdate = needsShadow;
   }
 
