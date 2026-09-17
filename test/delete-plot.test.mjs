@@ -10,7 +10,7 @@ test('owner deletion releases land, removes versions and drafts, and preserves a
   const dir=mkdtempSync(join(tmpdir(),'delete-plot-')),config={dataDir:dir,url:'http://127.0.0.1:8787',adminIds:[]}, {app,store}=(await createApp(config));
   const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
   try{
-    const owner=(await testSession(store)),other=(await testSession(store,'1002'));(await store.claim('1001',-7,1));
+    const owner=(await testSession(store)),other=(await testSession(store,'1002'));await store.db.prepare('UPDATE users SET points=9000 WHERE id=?').run('1001');(await store.claim('1001',-7,1));
     const edit=(auth,body)=>fetch(base+'/api/plots/mine',{method:'PATCH',headers:{Origin:config.url,Cookie:auth.cookie,'X-CSRF-Token':auth.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)});
     assert.equal((await edit(other,{name:'Other',description:''})).status,404);
     assert.equal((await edit(owner,{name:'',description:''})).status,400);

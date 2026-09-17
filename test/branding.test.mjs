@@ -9,3 +9,11 @@ test('public pages use openworldcraft branding and expose the builder skill whil
   assert.match(game,/id="builder-skill"/);assert.match(game,/id="builder-onboarding"/);assert.match(game,/id="builder-installed" disabled/);
   assert.doesNotMatch(game,/id="admin"|审核工作台/);
 });
+
+test('first-person reticle is a single dot without crosshair strokes',async()=>{
+  const game=await readFile('public/game.html','utf8');
+  const css=await readFile('public/style.css','utf8');
+  assert.match(game,/<span class="reticle" aria-hidden="true"><\/span>/);
+  assert.doesNotMatch(game,/reticle-(?:outline|lines)/);
+  assert.match(css,/\.reticle\{width:7px;height:7px;[^}]*border-radius:50%/);
+});

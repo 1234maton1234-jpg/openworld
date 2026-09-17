@@ -6,7 +6,7 @@ import {installTeleports} from './teleports.mjs';
 import {mkdirSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createStore,RULES,coordinate,fail} from './store.mjs';
+import {createStore,RULES,ECONOMY,coordinate,fail} from './store.mjs';
 import {installAuth,requireUser,requireAdmin} from './auth.mjs';
 import {installCliApi} from './cli-api.mjs';
 import {authoringContract} from './authoring.mjs';
@@ -30,9 +30,9 @@ export async function createApp(config){
   app.use(express.json({limit:'16kb'}));
   app.get('/api/cli/authoring',async(req,res)=>res.json(await authoringContract()));
   try{if(config.devAvatarFile){const {installDevelopmentAvatar}=await import('./development-avatar.mjs');await installDevelopmentAvatar(app,config);}await installAuth(app,store,config);await installCliApi(app,store,uploads);await installTeleports(app,store);}catch(error){await store.close();throw error;}
-  app.get('/api/world',async (req,res)=>{const x=coordinate(Number(req.query.x??0)),z=coordinate(Number(req.query.z??0)),r=Number(req.query.radius??3);if(!Number.isInteger(r)||r<1||r>4)fail(400,'加载范围无效');res.json({plots:(await store.world(x,z,r)),planning:{...(await store.planner.around(x,z)),lots:[],freeform:true},rules:RULES});});
+  app.get('/api/world',async (req,res)=>{const x=coordinate(Number(req.query.x??0)),z=coordinate(Number(req.query.z??0)),r=Number(req.query.radius??3);if(!Number.isInteger(r)||r<1||r>4)fail(400,'加载范围无效');res.json({plots:(await store.world(x,z,r,req.user?.id)),planning:{...(await store.planner.around(x,z)),lots:[],freeform:true},rules:RULES,economy:ECONOMY});});
   async function ownedPlot(req){if(req.query.plot)return store.getPlot(req.user.id,req.query.plot);const plots=await store.getPlots(req.user.id);if(plots.length>1)fail(409,'请先选择要操作的领地');return plots[0];}
-  app.get('/api/mine',requireUser,async (req,res)=>{const plots=await store.getPlots(req.user.id);res.json({plots,plot:plots[0]||null,plotLimit:await store.getPlotLimit(req.user.id),plotRules:await store.getPlotRules(req.user.id),submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))});});
+  app.get('/api/mine',requireUser,async (req,res)=>{const plots=await store.getPlots(req.user.id),user=await store.getUser(req.user.id);res.json({plots,plot:plots[0]||null,points:user.points,plotLimit:await store.getPlotLimit(req.user.id),plotRules:await store.getPlotRules(req.user.id),economy:ECONOMY,submissions:(await store.db.prepare('SELECT * FROM submissions WHERE owner=? ORDER BY created DESC').all(req.user.id))});});
   app.patch('/api/plots/mine',requireUser,async (req,res)=>{
     const {name,description}=req.body||{};if(typeof name!=='string'||!name.trim()||name.trim().length>60||typeof description!=='string'||description.trim().length>1000)fail(400,'名称需为 1–60 字，介绍不超过 1000 字');
     const plot=await ownedPlot(req);if(!plot)fail(404,'你尚未领取地皮');
@@ -45,6 +45,7 @@ export async function createApp(config){
   });
   app.post('/api/plots/check',requireUser,async (req,res)=>{(await store.rate('land-check:'+req.user.id,60));res.json((await store.checkLand(req.user.id,req.body?.polygon)));});
   app.post('/api/plots/claim',requireUser,async (req,res)=>{(await store.rate('claim:'+req.user.id,10));res.status(201).json(req.body?.polygon?(await store.claimLand(req.user.id,req.body.polygon)):(await store.claim(req.user.id,req.body?.x,req.body?.z)));});
+  app.post('/api/plots/:x/:z/like',requireUser,async(req,res)=>{await store.rate('plot-like:'+req.user.id,30);res.json(await store.likePlot(req.user.id,Number(req.params.x),Number(req.params.z)));});
   app.post('/api/submissions',requireUser,(req,res)=>res.status(410).json({error:'网页上传已停用，请使用 openworld CLI'}));
   app.get('/api/admin/submissions',requireAdmin,async (req,res)=>{
     const status=req.query.status||'pending',offset=Number(req.query.offset||0);

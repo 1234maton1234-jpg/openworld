@@ -34,7 +34,7 @@ test('mine API exposes unlimited parcel area only for configured owners',async()
 test('a granted owner can claim, publish and delete plots independently',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'plot-grant-')),{store}=await createApp({dataDir:dir,url:'http://127.0.0.1:8787',adminIds:[]});
   try{
-    await store.upsertUser('builder','builder');await store.setPlotLimit('builder',10);
+    await store.upsertUser('builder','builder');await store.setPlotLimit('builder',10);await store.db.prepare('UPDATE users SET points=9000 WHERE id=?').run('builder');
     const lots=(await store.planner.around(0,0)).lots,firstLot=lots[0],secondLot=lots.find(row=>Math.hypot(row.cx-firstLot.cx,row.cz-firstLot.cz)>150);
     const first=await store.claim('builder',firstLot.x,firstLot.z),second=await store.claim('builder',secondLot.x,secondLot.z);
     assert.equal((await store.getPlots('builder')).length,2);assert.equal(await store.getPlotLimit('builder'),10);assert.equal(second.key,secondLot.x+','+secondLot.z);

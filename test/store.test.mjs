@@ -4,7 +4,7 @@ import {createStore} from '../server/store.mjs';
 test('a validated upload cannot attach to a deleted and reclaimed plot',async()=>{
   const s=await createStore(':memory:');
   try{
-    await s.upsertUser('1','one');await s.claim('1',-7,1);const revision=s.plotRevision('1');
+    await s.upsertUser('1','one');await s.db.prepare('UPDATE users SET points=9000 WHERE id=?').run('1');await s.claim('1',-7,1);const revision=s.plotRevision('1');
     await s.deletePlot('1');await s.claim('1',-7,1);
     await assert.rejects(s.submit('1','Stale',{},'stale',revision),/地皮已删除/);
     assert.equal(await s.getSubmission('stale'),undefined);
