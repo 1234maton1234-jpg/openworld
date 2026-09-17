@@ -64,6 +64,49 @@ import * as THREE from 'three';
  * 不需要 `unpackRGBAToDepth`。这顺带绕开了 `packing` chunk 的重复包含问题
  * （自己 `#include <packing>` 可能和 `shadowmap_pars_fragment` 里那次撞车）。
  */
+/**
+ * r180 的 `ShaderChunk.lights_fragment_begin` 里，**平行光**那一段和**面光**那一段
+ * 的开头两行。注入靠在这两处前后各插一次快照做差（见 `inject()`），
+ * 所以它们的文本必须**一字不差**。
+ */
+const CHUNK_DIR_OPEN = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )';
+const CHUNK_RECT_OPEN = '#if ( NUM_RECT_AREA_LIGHTS > 0 ) && defined( RE_Direct_RectArea )';
+
+/**
+ * three 的这两个 chunk 还是不是 r180 那个形状。只查一次，结果缓存。
+ *
+ * **为什么要查**：注入是把整个 chunk 展开后做字符串替换，而 `String.replace`
+ * 找不到匹配时**不报错、原样返回** —— 升级 three 之后只要那段文本变了
+ * （多一个空格都算），替换就静默失效，`charShadowNonDirDiffuse` /
+ * `charShadowDirDiffuse` 于是没被定义，最后在驱动层报一句离真正原因很远的
+ * GLSL 编译错误（或者更糟：只失配一处，编译过了但量是错的）。
+ *
+ * 所以先验形状，失配就**整个不注入**：材质保持完全原状，等价于没接这个模块 ——
+ * 画面回到接入前，但不会把宿主的渲染循环弄挂。用 `console.error` 而不是 `throw`，
+ * 因为 `onBeforeCompile` 是在 `renderer.render()` 内部被调用的，抛出去会一路
+ * 打断宿主那一帧；而"没有影子"是安全的降级，"渲染循环崩了"不是。
+ *
+ * 要求**恰好出现一次**：`String.replace` 只替换第一处，出现两次会改到错的地方。
+ */
+let _chunkShapeOk = null;
+function chunkShapeOk() {
+  if (_chunkShapeOk !== null) return _chunkShapeOk;
+  const src = THREE.ShaderChunk.lights_fragment_begin;
+  const countOf = (hay, needle) => hay.split(needle).length - 1;
+  _chunkShapeOk = typeof src === 'string'
+    && countOf(src, CHUNK_DIR_OPEN) === 1
+    && countOf(src, CHUNK_RECT_OPEN) === 1;
+  if (!_chunkShapeOk) {
+    console.error(
+      '[CharacterShadow] THREE.ShaderChunk.lights_fragment_begin 的形状与 r180 不一致，'
+      + '注入点失配。**已放弃注入** —— 角色影子不会出现，其余一切照常。'
+      + '升级 three 之后看到这条，就说明那段 chunk 的文本变了，'
+      + '需要跟着改 CHUNK_DIR_OPEN / CHUNK_RECT_OPEN 这两个常量。'
+    );
+  }
+  return _chunkShapeOk;
+}
+
 export class CharacterShadow {
   /**
    * 角色所在的图层。主相机靠 layer 0 看见它（默认就有），
@@ -146,6 +189,9 @@ export class CharacterShadow {
      * 等价于角色不投影 —— 但角色本身在主画面里照常可见。
      */
     this.visible = true;
+
+    /** 「角色比盒子还大」这个警告只报一次，别每帧刷屏 */
+    this._warnedBox = false;
 
     // 颜色附件用不上（我们只读深度），但仍需存在，否则 RT 不完整
     this.rt = new THREE.WebGLRenderTarget(size, size, {
@@ -276,6 +322,21 @@ export class CharacterShadow {
     const d = this.sunDirection;
     this._box.getSize(this._size);
     this._casterRadius = this._size.length() / 2;
+
+    // 盒只要罩住**角色本体**就够（影子必然落在同一个光轴垂直窗口里），
+    // 所以角色比盒还大时影子会被**默默裁掉** —— 不报错、不抛异常，只是边缘缺一块。
+    // 缩放过的角色、挂在角色根下的大挂件、坐骑都会踩到。报一次就够。
+    // 这里用的是包围球半径（盒对角线的一半），偏保守 —— 触发时不一定真被裁，
+    // 但它已经足够小到值得去看一眼了。
+    if (!this._warnedBox && this._casterRadius > this.extent * 0.5) {
+      this._warnedBox = true;
+      console.warn(
+        `[CharacterShadow] 角色包围球半径 ${this._casterRadius.toFixed(2)} m 超过正交盒半边长 `
+        + `${(this.extent / 2).toFixed(2)} m，影子边缘**可能**被裁掉。`
+        + `要留够余量的话把 extent 调到 ${Math.max(4, Math.ceil(this._casterRadius * 3))} 左右`
+        + `（当前 ${this.extent}），或确认角色下有没有挂着本不该算进来的大物件。`
+      );
+    }
 
     // 影子尖沿光轴比角色最远点还远出 t = 角色高度 / sin(太阳高度角)。
     // 这个量随太阳高低变化近 10 倍，所以 near/far 每帧现算（见类注释）。
@@ -427,10 +488,16 @@ export class CharacterShadow {
    *
    * 注入点在 `lights_fragment_end`：那里所有直接光照已经累加完，
    * 乘上去等价于"这些光被挡了一部分"。
+   *
+   * @returns {boolean} 是否真的注入了。`false` = 材质类型不支持、已经注入过、
+   *   或 three 的 chunk 形状对不上（最后这种会 `console.error` 一次并**整体放弃**）。
    */
   inject(material) {
-    if (!material || this._injected?.has(material)) return;
-    if (!material.isMeshStandardMaterial && !material.isMeshPhongMaterial) return;
+    if (!material || this._injected?.has(material)) return false;
+    if (!material.isMeshStandardMaterial && !material.isMeshPhongMaterial) return false;
+    // 形状对不上就**整个不注入**，让材质保持原状（理由见 `chunkShapeOk`）。
+    // 注入一半的后果是着色器编译失败，比"没有影子"糟得多。
+    if (!chunkShapeOk()) return false;
     (this._injected ??= new WeakSet()).add(material);
 
     const self = this;
@@ -509,6 +576,18 @@ float charShadowTap( vec2 uv, float z ) {
 float charShadowFactor() {
   vec3 c = vCharShadowCoord.xyz / vCharShadowCoord.w;
   if ( c.z > 1.0 ) return 1.0;
+  // 盒外早退。接收面通常铺满整个画面，而这张图只罩角色周围 4m ——
+  // 屏幕上绝大多数片元落在这个盒之外，它们那 12 次采样会在 charShadowTap
+  // 第一行的越界判断里全部返回 1.0，纯属白算，还附送 24 次三角函数。
+  //
+  // margin 取采样盘的最大偏移：r = sqrt(fi/12) * radius * texel，而
+  // sqrt(fi/12) 最大是 sqrt(11.5/12) = 0.979 < 1，所以每个采样点的偏移
+  // 都**严格小于** margin。于是 c 超出这么多时，12 个采样点必然全部越界
+  // ⇒ 逐点算出来也是 lit = 12 ⇒ 1.0，与这里的提前返回**是同一个值**，
+  // 连浮点都一样（12.0/12.0 和 1.0 都是精确的）。
+  float margin = charShadowRadius * charShadowTexel;
+  if ( c.x < -margin || c.x > 1.0 + margin ||
+       c.y < -margin || c.y > 1.0 + margin ) return 1.0;
   float rot = fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) * 6.2831853;
   float lit = 0.0;
   for ( int i = 0; i < 12; i ++ ) {
@@ -553,8 +632,8 @@ float charShadowFactor() {
       // —— 所以把整个 chunk 展开后替换掉 shader 里的 `#include`。
       // **用 three 自己的 chunk 文本**（而不是抄一份），这样它升级时不会悄悄漂。
       // 这一段里没有嵌套 `#include`（查过），展开是安全的。
-      const DIR_OPEN = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )';
-      const RECT_OPEN = '#if ( NUM_RECT_AREA_LIGHTS > 0 ) && defined( RE_Direct_RectArea )';
+      const DIR_OPEN = CHUNK_DIR_OPEN;
+      const RECT_OPEN = CHUNK_RECT_OPEN;
       const beginPatched = THREE.ShaderChunk.lights_fragment_begin
         // 平行光这一段之前：此刻 directDiffuse 里只有点光+聚光（面光在更后面）
         .replace(
@@ -578,6 +657,7 @@ ${RECT_OPEN}`
       );
     };
     material.needsUpdate = true;
+    return true;
   }
 
   /** 遍历场景注入（角色自己也注入 —— 这样它能在自己身上投射高精度自阴影） */

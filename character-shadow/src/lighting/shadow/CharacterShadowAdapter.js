@@ -108,9 +108,13 @@ export class CharacterShadowAdapter {
     this._dirty = false;
     /** 跳过的材质按类型记数 —— 静默跳过是接进宿主后最难查的故障 */
     this._skipped = new Map();
+    /** 已经记过数的跳过材质，避免标脏遍历反复累加同一个（见 `_injectOne`） */
+    this._skippedSeen = new WeakSet();
     this._injectedCount = 0;
     this._updates = 0;
     this._attachedRoot = null;
+    /** 反推太阳方向用的复用向量 —— 不要在每帧的路径上 new（见 `update()`） */
+    this._sunDirScratch = new THREE.Vector3();
   }
 
   /** 专用图层号（`CharacterShadow.LAYER`）。宿主要确认这一层是空的 */
@@ -136,8 +140,9 @@ export class CharacterShadowAdapter {
   attachCharacter(root, { keepReceive = true } = {}) {
     if (!root) return this;
     this._attachedRoot = root;
+    // setCharacter() 内部已经走过一遍 `_setupLayers()`（同一个 traverse），
+    // 所以这里**不要**再调 prepareCharacterObject —— 那会让角色被遍历三遍
     this.shadow.setCharacter(root);
-    this.shadow.prepareCharacterObject(root);
     root.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = false;
@@ -204,7 +209,9 @@ export class CharacterShadowAdapter {
     if (this.renderer.xr?.isPresenting) return this;
 
     if (this.sun) {
-      const d = deriveSunDirection(this.sun); // 光位置每帧被天空系统改写
+      // 复用同一个向量：`deriveSunDirection` 的默认参数每帧 new 一个，
+      // 纯属给 GC 添活。`setSunDirection` 内部会 copy，所以复用是安全的。
+      const d = deriveSunDirection(this.sun, this._sunDirScratch); // 光位置每帧被天空系统改写
       if (d) this.shadow.setSunDirection(d);
     }
 
@@ -299,11 +306,18 @@ export class CharacterShadowAdapter {
       // 前后比引用永远相等（第一版就栽在这 —— 计数停在 1，
       // `stats().injected` 看着像"只注入了一个材质"）
       if (this.shadow.hasInjected(m)) return;
-      this.shadow.inject(m);
-      this._injectedCount++;
+      // `inject` 可能返回 false（three 的 chunk 形状失配 ⇒ 整体放弃注入），
+      // 那就**不能**算进 injected —— 否则读数会说"注入成功"，
+      // 而画面上一个角色影子都没有，正好是最难查的那种不一致
+      if (this.shadow.inject(m)) this._injectedCount++;
       return;
     }
     // 记下**为什么**没影子：跳过的材质种类。接进宿主后最难查的就是这一类
+    // **每个材质只记一次**：标脏遍历会把同一批场景物件反复送进来，不去重的话
+    // 这个计数会随每次世界更新一直涨，看起来像"又冒出来一堆坏材质"。
+    // 它的语义是「**有多少个**材质没接进来」，不是「遇到过多少次」。
+    if (this._skippedSeen.has(m)) return;
+    this._skippedSeen.add(m);
     const kind = m.type ?? (m.isShaderMaterial ? 'ShaderMaterial' : 'unknown');
     this._skipped.set(kind, (this._skipped.get(kind) ?? 0) + 1);
   }
