@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CharacterShadowAdapter 自检</title>
+<style>
+  body { margin: 0; background: #14171a; color: #d8dee4; font: 13px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  pre { margin: 0; padding: 16px; white-space: pre-wrap; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<!--
+  `CharacterShadowAdapter` 的自检。**不要**把它接进产品 build 入口 —— 这是开发者工具。
+
+  两种跑法：
+
+  1. 打成离线单页（three 会一起打进去，不需要网络）：
+       cd selfcheck
+       npx vite build && npx vite preview
+     打开终端给出的地址。或者对 dist/ 起任意静态服务器
+     （`python -m http.server` 也行）—— 但必须走 http://，
+     直接双击文件用 file:// 会被浏览器的模块 CORS 拦掉。
+
+  2. 用你们自己的构建工程跑（验证"在你们的 three 版本上也没问题"）：
+     把 adapter-check.html + adapter-check.js 一起丢进去当入口页，
+     让构建工具按你们的方式解析 `three`。注意 adapter-check.js 里的 import
+     路径是相对本包布局的（`../src/lighting/shadow/`）。
+
+  两种跑法都要看到最后一行 "合计 36 通过 / 0 失败"。有 FAIL 就把那一行原文发出来。
+  断言失败**不中断**，一次跑完能看到所有问题。
+-->
+<script type="module" src="./adapter-check.js"></script>
+</body>
+</html>
