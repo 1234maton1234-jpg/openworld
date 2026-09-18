@@ -30,6 +30,8 @@ test('airborne vehicles do not block pedestrians below and cannot dismount in mi
 });
 test('multiplayer accepts plane and boat types and bounds attitude',()=>{
   for(const type of ['plane','boat']){const p=playerPose({x:0,y:5,z:0,yaw:0,vehicleType:type,personalCar:{x:0,y:5,z:0,yaw:0,type,pitch:99}});assert.equal(p.vehicleType,type);assert.equal(p.personalCar.type,type);assert.ok(p.personalCar.pitch<=.4);}
+  const pose=roll=>playerPose({x:0,y:5,z:0,yaw:0,vehicleType:'plane',personalCar:{x:0,y:5,z:0,yaw:0,type:'plane',roll}}).personalCar;
+  assert.equal(pose(99).roll,1.25);assert.equal(pose(-.6).roll,-.6);assert.equal(pose(undefined).roll,0);
 });
 test('plane update climbs, respects ceiling, lands and freezes while paused',()=>{
   const s=system(()=>4),camera=new PerspectiveCamera();assert.ok(s.summon(100,100,0,null,'plane'));s.enter(s.personal);
@@ -37,7 +39,9 @@ test('plane update climbs, respects ceiling, lands and freezes while paused',()=
   const v=s.personal;assert.ok(v.y>40);assert.ok(v.group.rotation.x>0);assert.ok(v.group.getObjectByName('propeller').rotation.z!==0);
   const before=[v.x,v.y,v.z];s.update(.05,new Set(['KeyW','KeyE']),false,camera);assert.deepEqual([v.x,v.y,v.z],before);
   v.y=599.99;s.update(.05,new Set(['KeyW','KeyE']),true,camera);assert.equal(v.y,600);
-  v.y=4.1;s.update(.05,new Set(['KeyQ']),true,camera);assert.equal(v.y,4);
+  // The nose now leads the trajectory, so descending takes a dive rather than a
+  // single frame; the surface clamp still settles it exactly on the ground.
+  v.y=4.1;for(let i=0;i<400;i++)s.update(.05,new Set(['KeyQ']),true,camera);assert.equal(v.y,4);
   for(let i=0;i<100;i++)s.update(.05,new Set(['Space']),true,camera);assert.ok(s.canExit());assert.equal(s.active,v);assert.ok(s.exit());
 });
 test('boat stops before shore and dismounts only when stopped beside land',()=>{
