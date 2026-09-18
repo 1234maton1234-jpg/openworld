@@ -38,12 +38,19 @@
  * own weight below the reference speed. Retune `stallSpeed` and the threshold
  * moves with it.
  *
+ * Note the practical climb threshold sits higher, around 14 m/s. Holding full
+ * up elevator drives alpha past `alphaStall`, where CL collapses to the
+ * `stallFloor` residual, so between roughly 12 and 14 m/s the aircraft is behind
+ * the power curve: the harder you pull, the faster it sinks. With full throttle
+ * on the runway that never binds, because thrust keeps accelerating the aircraft
+ * through the band — which is why a rotation at 12 m/s still gets airborne.
+ *
  * `cd0` is likewise set so that full thrust balances drag at
  * `VEHICLE_TYPES.plane.max`, which is what stops level flight from running away
  * to the overspeed cap. The consequence worth knowing is that this airframe is
- * thrust-limited, not drag-limited: thrust/weight is 0.61 and the pitch limit
- * caps the dive angle at 21.8 degrees, so `g*sin(21.8deg)` = 3.87 < 6 and the
- * aircraft cannot overspeed in a dive. That is a property of the calibration,
+ * thrust-limited, not drag-limited: thrust/weight is 0.612 (accel 6 / g 9.8) and
+ * the pitch limit caps the dive angle at 21.77 degrees, so `g*sin(21.77deg)` =
+ * 3.64 < 6 and the aircraft cannot overspeed in a dive. That is a property of the calibration,
  * not an oversight — raise `thetaMax` or `accel` and it changes.
  *
  * ── What the pose publishes ─────────────────────────────────────────────────
