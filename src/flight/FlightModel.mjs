@@ -1,10 +1,62 @@
-import {VEHICLE_TYPES} from '../shared/vehicle-types.mjs';
+/**
+ * Point-mass aerodynamics for the plane — the half of the flight code that is
+ * pure arithmetic and can therefore be pinned down by unit tests in Node.
+ *
+ * `FlightAdapter.mjs` sits next to it and owns the other half: how often to
+ * integrate, how to ask the world whether a move is legal, and how to publish
+ * the attitude for rendering. Splitting them the same way the character shadow
+ * splits `CharacterShadow` from `CharacterShadowAdapter` keeps this file free of
+ * three.js, of the collision grid and of the frame loop, so a stall or an energy
+ * exchange can be asserted directly instead of inferred from a rendered frame.
+ *
+ * ── The model ───────────────────────────────────────────────────────────────
+ *
+ * The old plane moved vertically on the frame a key was pressed: lift was a
+ * hard-coded `speed > 12` gate, the climb rate was capped at 9 m/s independently
+ * of airspeed, and a fixed -3 sink applied whenever the aircraft was airborne
+ * and slow. Nothing conserved energy, so a dive could not be traded for speed
+ * and a climb cost nothing.
+ *
+ * This is a point mass instead. Two angles carry inertia — the flight path
+ * `gamma` and the bank `bank` — and the nose attitude `theta` is what the
+ * elevator actually commands, so the nose leads the trajectory rather than
+ * dragging it. The gaps between them are the physics:
+ *
+ *   alpha = theta - gamma      angle of attack, the only thing that makes lift
+ *   CL    = clAlpha * alpha    linear below the stall angle, then collapsing
+ *   L     = LIFT_K * V^2 * CL  lift, quadratic in airspeed like the real thing
+ *   D     = V^2 * (cd0 + induced * CL^2)
+ *   dV/dt = thrust - D - g*sin(gamma)          energy, not a script
+ *   dgamma/dt = (L*cos(bank) - g*cos(gamma)) / inertia
+ *   dpsi/dt = L*sin(bank) / inertia            a banked wing turns
+ *
+ * ── Two calibrations, not two magic numbers ─────────────────────────────────
+ *
+ * `LIFT_K` is derived, not tuned: it is whatever makes CLMAX at `stallSpeed`
+ * produce exactly one gravity. The 12 m/s takeoff threshold the old code
+ * hard-coded is therefore emergent — the aircraft simply stops out-lifting its
+ * own weight below the reference speed. Retune `stallSpeed` and the threshold
+ * moves with it.
+ *
+ * `cd0` is likewise set so that full thrust balances drag at
+ * `VEHICLE_TYPES.plane.max`, which is what stops level flight from running away
+ * to the overspeed cap. The consequence worth knowing is that this airframe is
+ * thrust-limited, not drag-limited: thrust/weight is 0.61 and the pitch limit
+ * caps the dive angle at 21.8 degrees, so `g*sin(21.8deg)` = 3.87 < 6 and the
+ * aircraft cannot overspeed in a dive. That is a property of the calibration,
+ * not an oversight — raise `thetaMax` or `accel` and it changes.
+ *
+ * ── What the pose publishes ─────────────────────────────────────────────────
+ *
+ * `roll` is `-bank` because the renderer builds the rotation as
+ * `rotation.set(pitch, heading, roll, 'YXZ')` with the nose along -Z, where a
+ * positive z-rotation is a left bank. Both `pitch` and `roll` are kept inside
+ * the clamps `shared/player-state.mjs` applies to the network pose, so attitude
+ * never gets silently flattened between the sim and a remote observer.
+ */
 
-// Point-mass aerodynamic model for the plane. Lift grows with the square of the
-// airspeed and with the angle of attack, collapses past the stall angle and
-// carries induced drag; the flight-path and bank angles each have their own
-// inertia, so the nose leads the trajectory instead of moving the aircraft
-// vertically on the frame the key is pressed.
+import {VEHICLE_TYPES} from '../../shared/vehicle-types.mjs';
+
 export const FLIGHT={
   gravity:9.8,
   stallSpeed:12,        // reference speed the lift constant is calibrated against
@@ -22,6 +74,7 @@ export const FLIGHT={
   airbrake:14,
   overspeed:1.25,       // diving may exceed the level maximum
   groundFriction:.6,
+  ceiling:600,
 };
 export const CLMAX=FLIGHT.clAlpha*FLIGHT.alphaStall;
 // Chosen so that CLMAX at stallSpeed produces exactly one gravity of lift; the
@@ -37,7 +90,7 @@ export function liftCoefficient(alpha){
 }
 
 // v.speed is total airspeed, v.gamma the flight-path angle, v.theta the nose
-// attitude and v.bank the roll angle (positive rolls right). floor is the
+// attitude and v.bank the roll angle (positive rolls right). surfaceY is the
 // surface height under the aircraft, or null when the caller has none.
 export function stepFlight(v,input,dt,surfaceY){
   const spec=VEHICLE_TYPES.plane,ground=surfaceY==null?-Infinity:surfaceY;
@@ -79,5 +132,5 @@ export function stepFlight(v,input,dt,surfaceY){
   const forward=v.speed*Math.cos(v.gamma)*dt;
   let y=v.y+v.speed*Math.sin(v.gamma)*dt;
   if(y<=ground){y=ground;if(v.gamma<0)v.gamma=0;}
-  return {x:v.x-Math.sin(v.heading)*forward,y:Math.min(600,y),z:v.z-Math.cos(v.heading)*forward};
+  return {x:v.x-Math.sin(v.heading)*forward,y:Math.min(FLIGHT.ceiling,y),z:v.z-Math.cos(v.heading)*forward};
 }

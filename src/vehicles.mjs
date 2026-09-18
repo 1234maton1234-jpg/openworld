@@ -3,7 +3,7 @@ import {animateVehicleModel,releaseCar} from './custom-car.mjs';
 import {VEHICLE_TYPES,vehicleCategory} from '../shared/vehicle-types.mjs';
 import {carSeats} from '../shared/car-seats.mjs';
 import {createDefaultCar} from './default-car.mjs';
-import {stepFlight} from './flight-model.mjs';
+import {runwayFloor,stepPlane} from './flight/FlightAdapter.mjs';
 
 export const VEHICLES={bike:{name:'单车',max:9,accel:3,reverse:2,radius:.4,length:1.8},...VEHICLE_TYPES};
 const approach=(a,b,rate,dt)=>a+(b-a)*(1-Math.exp(-rate*dt));
@@ -30,14 +30,7 @@ function carStep(v,input,dt,canMove){
   }
 }
 export function driveStep(v,input,dt,canMove,floorAt){
-  if(v.type==='plane'){
-    dt=Math.max(0,Math.min(dt,.05));const steps=Math.max(1,Math.ceil(dt*120)),step=dt/steps,floor=floorAt?floorAt(v.x,v.z):null;
-    for(let i=0;i<steps;i++){
-      const next=stepFlight(v,input,step,floor);
-      if(!canMove(next.x,next.z,v.heading,next.y)){v.speed=0;break;}
-      v.x=next.x;v.y=next.y;v.z=next.z;
-    }return;
-  }
+  if(v.type==='plane'){stepPlane(v,input,dt,canMove,floorAt);return;}
   if(v.type==='boat'){
     dt=Math.max(0,Math.min(dt,.05));const c=VEHICLES[v.type],steps=Math.max(1,Math.ceil(dt*120));
     for(let i=0;i<steps;i++){
@@ -90,7 +83,7 @@ export function createVehicleModel(type){
 export function createVehicles(scene,{surface,ground=surface,obstacle,origin}){
   const items=['bike','car'].map((type,i)=>{const model=createVehicleModel(type);scene.add(model.group);return {...model,type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,y:null};});
   let active=null,personal=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;const firstPersonLook={yaw:0,pitch:-.08};
-  const planeFloor=(x,z)=>{const h=surface(x,z);return h>=.5?h:.8;};
+  const planeFloor=runwayFloor(surface);
   function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.set(v.pitch||0,v.heading,v.roll||0,'YXZ');v.group.updateMatrixWorld(true);}}
   function clear(v,x,z,heading,base){
     const c=VEHICLES[v.type],boat=v.type==='boat',plane=v.type==='plane';

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Scene,PerspectiveCamera} from 'three';
-import {FLIGHT,CLMAX,liftCoefficient,stepFlight} from '../src/flight-model.mjs';
+import {FLIGHT,CLMAX,liftCoefficient,stepFlight} from '../src/flight/FlightModel.mjs';
+import {MIN_RUNWAY,runwayFloor,stepPlane} from '../src/flight/FlightAdapter.mjs';
 import {driveStep,VEHICLES,createVehicles} from '../src/vehicles.mjs';
 
 const air=overrides=>({type:'plane',x:0,y:100,z:0,heading:0,speed:30,gamma:0,theta:0,bank:0,...overrides});
@@ -114,4 +115,16 @@ test('the vehicle entry point keeps the documented climb, roll and ceiling behav
   assert.ok(v.y>40);assert.ok(v.group.rotation.x>0);
   v.y=599.99;system.update(.05,new Set(['KeyW','KeyE']),true,camera);assert.equal(v.y,600);
   v.bank=.6;v.roll=-.6;system.rebase();assert.equal(v.group.rotation.z,-.6);
+});
+
+test('the runway floor is the terrain on land and a fixed minimum over water',()=>{
+  const floor=runwayFloor((x)=>x<0?-3:4.2);
+  assert.equal(floor(-1,0),MIN_RUNWAY);assert.equal(floor(1,0),4.2);
+});
+
+test('the adapter integrates at a fixed substep so the frame rate does not change the answer',()=>{
+  const fly=dt=>{const v={type:'plane',x:0,y:100,z:0,heading:0,speed:40,gamma:0,theta:0,bank:0};for(let i=0;i<Math.round(4/dt);i++)stepPlane(v,{forward:true,right:true,up:true},dt,()=>true,null);return v;};
+  const slow=fly(1/60),fast=fly(1/120);
+  assert.ok(Math.abs(slow.y-fast.y)<1);assert.ok(Math.abs(slow.heading-fast.heading)<.02);
+  assert.ok(slow.speed>0&&fast.speed>0);
 });
