@@ -19,10 +19,17 @@ test('boats require water across their footprint and cannot spawn on land',()=>{
 });
 test('planes need dry ground, accelerate before climbing, and respect blocked movement',()=>{
   assert.equal(system(()=>-3).summon(0,0,0,null,'plane'),false);
+  // The floor is passed here because a plane without one is airborne by
+  // definition and now falls, as it should; driveStep always receives the
+  // runway floor in the game.
   const v={type:'plane',x:0,y:4,z:0,heading:0,speed:0};
-  driveStep(v,{up:true},.05,()=>true);assert.equal(v.y,4);
-  v.speed=30;driveStep(v,{up:true,forward:true},.05,()=>true);assert.ok(v.y>4);
-  const before={x:v.x,y:v.y,z:v.z};driveStep(v,{up:true},.05,()=>false);assert.deepEqual({x:v.x,y:v.y,z:v.z},before);
+  driveStep(v,{up:true},.05,()=>true,()=>4);assert.equal(v.y,4);
+  v.speed=30;driveStep(v,{up:true,forward:true},.05,()=>true,()=>4);assert.ok(v.y>4);
+  // Blocked movement stops the aircraft horizontally. Its altitude is no longer
+  // part of that: a blocked plane keeps losing altitude so it can drop away from
+  // an obstacle instead of hanging on it (covered in flight-model.test.mjs).
+  const before={x:v.x,z:v.z};driveStep(v,{up:true},.05,()=>false,()=>4);
+  assert.deepEqual({x:v.x,z:v.z},before);
 });
 test('airborne vehicles do not block pedestrians below and cannot dismount in midair',()=>{
   const s=system(()=>4);assert.ok(s.summon(0,0,0,null,'plane'));const v=s.personal;v.y=50;s.enter(v);

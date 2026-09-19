@@ -60,9 +60,18 @@ test('banking turns the aircraft and the wings level themselves when released',(
   assert.ok(Math.abs(released.bank)<.05);
 });
 
-test('a steeper bank turns faster at the same airspeed',()=>{
-  const turn=bank=>Math.abs(run(air({speed:40,bank}),{forward:true},2).heading);
-  assert.ok(turn(1.0)>turn(.4));
+test('the rudder yaws the nose and the bank angle is only an attitude',()=>{
+  assert.ok(run(air({speed:40}),{forward:true,right:true},3).heading<0);
+  assert.ok(run(air({speed:40}),{forward:true,left:true},3).heading>0);
+  assert.equal(run(air({speed:40}),{forward:true},3).heading,0);
+  // A wing held down without rudder input rolls the aircraft but does not turn
+  // it; the original yaw handling is what steers.
+  assert.equal(run(air({speed:40,bank:1}),{forward:true},3).heading,0);
+});
+
+test('yaw needs airspeed, so a stopped aircraft cannot be steered',()=>{
+  const still={type:'plane',x:0,y:100,z:0,heading:0,speed:0,gamma:0,theta:0,bank:0};
+  assert.equal(run(still,{right:true},.02).heading,0);
 });
 
 test('roll and pitch are published for rendering and stay inside the network pose bounds',()=>{
@@ -100,10 +109,38 @@ test('full throttle settles near the level maximum instead of running away',()=>
   assert.ok(v.speed>VEHICLES.plane.max*.95&&v.speed<VEHICLES.plane.max*1.05);
 });
 
-test('a blocked move leaves the position untouched',()=>{
+test('a blocked move kills the airspeed once and leaves the horizontal position untouched',()=>{
+  // Only x and z are untouched. The collision stops the aircraft where it is, but
+  // gravity still acts on it, so a blocked aircraft in mid-air also loses altitude —
+  // and that descent is what lets it drop away from whatever it hit.
   const v=air({speed:30});const before={x:v.x,y:v.y,z:v.z};
   driveStep(v,{up:true},.05,()=>false,null);
-  assert.deepEqual({x:v.x,y:v.y,z:v.z},before);assert.equal(v.speed,0);
+  assert.deepEqual({x:v.x,z:v.z},{x:before.x,z:before.z});
+  assert.ok(v.y<before.y,`expected the blocked aircraft to lose altitude, got y=${v.y}`);
+  // The impact itself still takes the airspeed; it is only rebuilt by diving.
+  const one=air({speed:30});
+  stepPlane(one,{},1/240,()=>false,null);
+  assert.equal(one.speed,0);
+});
+
+test('an airborne aircraft that has lost its airspeed falls instead of hovering',()=>{
+  const stalled={type:'plane',x:0,y:200,z:0,heading:0,speed:0,gamma:0,theta:0,bank:0};
+  const fallen=run({...stalled},{},5);
+  assert.ok(fallen.y<190,`expected the aircraft to fall, got y=${fallen.y}`);
+  assert.ok(fallen.gamma<-.5);
+});
+
+test('a plane flown into a building comes down instead of sticking to the wall',()=>{
+  // The shape the bug was reported in: a real obstacle through createVehicles, not
+  // a canMove stub. The plane used to stop dead against the wall and hang there
+  // permanently — zeroed airspeed left nothing to pitch, so nothing could move it.
+  const system=createVehicles(new Scene(),{surface:()=>4,ground:()=>4,obstacle:x=>x>=60&&x<=120,origin:()=>({x:0,z:0})});
+  const camera=new PerspectiveCamera();assert.ok(system.summon(20,0,-Math.PI/2,null,'plane'));
+  const v=system.personal;system.enter(v);
+  Object.assign(v,{x:20,y:60,z:0,speed:40,gamma:0,theta:0,bank:0});
+  for(let i=0;i<400;i++)system.update(.05,new Set(['KeyW']),true,camera);
+  assert.ok(v.x<60,`expected the building to stop the aircraft, got x=${v.x}`);
+  assert.ok(v.y<55,`expected the aircraft to come down, got y=${v.y}`);
 });
 
 test('the vehicle entry point keeps the documented climb, roll and ceiling behaviour',()=>{

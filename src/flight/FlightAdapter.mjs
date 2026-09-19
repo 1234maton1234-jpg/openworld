@@ -27,8 +27,10 @@ import {stepFlight} from './FlightModel.mjs';
 
 export const INTEGRATION_HZ=120,MAX_FRAME=.05,WATER_LEVEL=.5,MIN_RUNWAY=.8;
 
-// Lowest surface the aircraft may rest on at (x,z): the terrain where there is
-// land, a fixed minimum where there is only water.
+// Lowest surface the aircraft may rest on at (x,z): the surface where there is
+// land, a fixed minimum where there is only water. The caller passes a surface
+// that still includes building roofs — a walker may not step onto a roof, but an
+// aircraft that descends onto one should land there rather than sink through it.
 export const runwayFloor=surface=>(x,z)=>{const h=surface(x,z);return h>=WATER_LEVEL?h:MIN_RUNWAY;};
 
 // Fixed-substep integrator. Mutates v in place so the caller's object identity
@@ -36,10 +38,19 @@ export const runwayFloor=surface=>(x,z)=>{const h=surface(x,z);return h>=WATER_L
 export function stepPlane(v,input,dt,canMove,floorAt){
   dt=Math.max(0,Math.min(dt,MAX_FRAME));
   const steps=Math.max(1,Math.ceil(dt*INTEGRATION_HZ)),step=dt/steps;
-  const floor=floorAt?floorAt(v.x,v.z):null;
+  const floor=floorAt?floorAt(v.x,v.z):null,grounded=floor!=null&&v.y<=floor+.02;
   for(let i=0;i<steps;i++){
     const next=stepFlight(v,input,step,floor);
-    if(!canMove(next.x,next.z,v.heading,next.y)){v.speed=0;break;}
-    v.x=next.x;v.y=next.y;v.z=next.z;
+    // A collision stops the aircraft and kills its airspeed, but only once per
+    // contact, and it must not freeze the altitude with it. Both halves matter:
+    // zeroing the airspeed on every substep meant it could never rebuild the
+    // airspeed its fall needs, since a stalled aircraft regains airspeed from the
+    // descent itself — and discarding the whole position on a blocked move meant
+    // it could not even drop away. Together those pinned a plane against whatever
+    // it had hit, permanently. On the ground there is no fall to protect, so the
+    // airspeed is still cleared each substep to stop it accelerating while pinned.
+    if(canMove(next.x,next.z,v.heading,next.y)){v.x=next.x;v.z=next.z;v.crashed=false;}
+    else if(!v.crashed||grounded){v.crashed=true;v.speed=0;}
+    v.y=next.y;
   }
 }

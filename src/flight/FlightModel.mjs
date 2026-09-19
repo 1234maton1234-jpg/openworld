@@ -27,8 +27,14 @@
  *   L     = LIFT_K * V^2 * CL  lift, quadratic in airspeed like the real thing
  *   D     = V^2 * (cd0 + induced * CL^2)
  *   dV/dt = thrust - D - g*sin(gamma)          energy, not a script
- *   dgamma/dt = (L*cos(bank) - g*cos(gamma)) / inertia
- *   dpsi/dt = L*sin(bank) / inertia            a banked wing turns
+ *   dgamma/dt = (L - g*cos(gamma)) / inertia
+ *   dpsi/dt    = rudder deflection * airspeed  the original yaw law, kept
+ *
+ * Roll is an attitude, not a force. An earlier revision derived the turn from
+ * the bank angle and scaled lift by cos(bank), which is the more faithful model
+ * but changed how the aircraft handles; the brief was to keep the existing yaw
+ * handling and add roll on top of it, so bank drives nothing but the rendered
+ * attitude. Re-coupling it is a two-line change if that is wanted later.
  *
  * ── Two calibrations, not two magic numbers ─────────────────────────────────
  *
@@ -75,6 +81,8 @@ export const FLIGHT={
   induced:.026,         // induced drag
   thetaMax:.38,         // 21.8 deg; stays under the .4 pose clamp in shared/player-state.mjs
   pitchRate:4.5,
+  steerMax:.3,          // rudder authority, carried over from the original yaw law
+  steerRate:4,
   bankMax:1.22,         // 70 deg
   bankRate:2.2,
   bankReturn:1.4,       // wings level themselves when the stick is centred
@@ -107,33 +115,41 @@ export function stepFlight(v,input,dt,surfaceY){
   const throttle=Number(!!input.forward)-Number(!!input.back);
   const onGround=v.y<=ground+.02;
 
-  // The elevator holds the nose attitude, the ailerons hold the bank angle; on
-  // the ground the ailerons level the wings and steer the nosewheel instead.
+  // The elevator holds the nose attitude, the rudder yaws the nose at the rate
+  // the original handling used, and the ailerons roll the wings and nothing
+  // else. Roll is deliberately not what turns the aircraft: keeping the original
+  // yaw law meant adding roll did not have to change how the plane flies.
   v.theta=approach(v.theta,elevator*FLIGHT.thetaMax,FLIGHT.pitchRate,dt);
-  if(onGround){
-    v.bank=approach(v.bank,0,FLIGHT.bankRate,dt);
-    v.heading-=aileron*Math.min(.5,Math.abs(v.speed)*.04)*dt;
-  }else v.bank=approach(v.bank,aileron*FLIGHT.bankMax,aileron?FLIGHT.bankRate:FLIGHT.bankReturn,dt);
+  const rudder=Number(!!input.left)-Number(!!input.right);
+  v.steerAngle=approach(v.steerAngle||0,rudder*FLIGHT.steerMax,FLIGHT.steerRate,dt);
+  v.heading+=v.steerAngle*Math.min(1.5,Math.abs(v.speed)*.15)*Math.sign(v.speed)*dt;
+  v.bank=onGround?approach(v.bank,0,FLIGHT.bankRate,dt):approach(v.bank,aileron*FLIGHT.bankMax,aileron?FLIGHT.bankRate:FLIGHT.bankReturn,dt);
 
   // Angle of attack is the nose attitude measured against the trajectory, so a
   // climbing aircraft settles at a small alpha while a slow one stalls.
   const alpha=clamp(v.theta-v.gamma,-1.2,1.2),cl=liftCoefficient(alpha);
-  const airspeed2=v.speed*v.speed,lift=LIFT_K*airspeed2*cl*Math.cos(v.bank);
+  const airspeed2=v.speed*v.speed,lift=LIFT_K*airspeed2*cl;
   const drag=airspeed2*(FLIGHT.cd0+FLIGHT.induced*cl*cl)+(input.brake?FLIGHT.airbrake:0)+(onGround?FLIGHT.groundFriction:0);
   const thrust=throttle&&!input.brake?throttle*spec.accel:0;
-  // The point mass model degenerates at zero airspeed: there is no trajectory to
-  // accelerate along and none to pitch, so a parked aircraft would otherwise
-  // creep forward on the gravity-along-path term alone.
-  const flying=v.speed>.5;
-  const alongPath=flying?FLIGHT.gravity*Math.sin(v.gamma):0;
+  // Gravity acts whenever the aircraft is off the ground. Gating this on
+  // airspeed instead — as an earlier revision did, to stop a parked aircraft
+  // creeping forward along the gravity term — left an aircraft that had lost its
+  // airspeed hanging motionless in mid-air. Nothing else could move it: with no
+  // airspeed there is no trajectory to pitch, so a collision that zeroed the
+  // airspeed froze the plane against the building permanently. The ground clamp
+  // below prevents the creep on its own, without needing the airspeed gate.
+  const alongPath=onGround?0:FLIGHT.gravity*Math.sin(v.gamma);
   v.speed=clamp(v.speed+(thrust-drag-alongPath)*dt,0,spec.max*FLIGHT.overspeed);
   // Rolling to a halt must not undo the first increment of a standing start.
   if(onGround&&!thrust&&v.speed<.5)v.speed=0;
 
-  const inertia=Math.max(4,v.speed);
-  v.gamma=clamp(v.gamma+(flying?(lift-FLIGHT.gravity*Math.cos(v.gamma))/inertia*dt:0),-1.4,1.4);
+  // On the ground the surface carries the weight, so only excess lift can pitch
+  // the flight path up — gravity must not pull the nose down through the
+  // runway, but it must still be possible to rotate and take off. Off the ground
+  // the full lift-minus-weight acts, which is what makes a stalled aircraft fall.
+  const inertia=Math.max(4,v.speed),net=lift-FLIGHT.gravity*Math.cos(v.gamma);
+  v.gamma=clamp(v.gamma+(onGround?Math.max(0,net):net)/inertia*dt,-1.4,1.4);
   if(onGround&&v.gamma<0)v.gamma=0;
-  if(flying&&!onGround)v.heading-=lift*Math.sin(v.bank)/inertia*dt;
 
   v.pitch=v.theta;v.roll=-v.bank;
   const forward=v.speed*Math.cos(v.gamma)*dt;

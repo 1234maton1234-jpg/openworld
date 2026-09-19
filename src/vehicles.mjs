@@ -80,10 +80,10 @@ export function createVehicleModel(type){
   const pedals=[];if(type==='bike')for(const side of [-1,1])pedals.push(box(side*.22,.5,.05,.2,.06,.16,'metal'));
   return {group,wheels,pedals,...(type!=='bike'?{seats:carSeats(undefined,type)}:{})};
 }
-export function createVehicles(scene,{surface,ground=surface,obstacle,origin}){
+export function createVehicles(scene,{surface,ground=surface,obstacle,origin,roofAt=surface}){
   const items=['bike','car'].map((type,i)=>{const model=createVehicleModel(type);scene.add(model.group);return {...model,type,x:i?4:-4,z:42,heading:0,speed:0,crankPhase:0,y:null};});
   let active=null,personal=null,orbit=0,pitch=.3,chaseHeading=0,lookIdle=0;const firstPersonLook={yaw:0,pitch:-.08};
-  const planeFloor=runwayFloor(surface);
+  const planeFloor=runwayFloor(roofAt);
   function rebase(){const o=origin();for(const v of items){v.group.position.set(v.x-o.x*70,v.y??0,v.z-o.z*70);v.group.rotation.set(v.pitch||0,v.heading,v.roll||0,'YXZ');v.group.updateMatrixWorld(true);}}
   function clear(v,x,z,heading,base){
     const c=VEHICLES[v.type],boat=v.type==='boat',plane=v.type==='plane';
@@ -110,7 +110,7 @@ export function createVehicles(scene,{surface,ground=surface,obstacle,origin}){
     get firstPersonLook(){return {...firstPersonLook};},
     rebase,
     targets(){return items.map(v=>({root:v.group,node:v.group,position:[0,.8,0],range:v.type==='plane'?10:v.type==='boat'?8:3.2,yaw:v.heading,vehicle:v}));},
-    enter(v){active=v;v.speed=v.coasting?v.speed:0;v.coasting=false;v.yawRate=0;v.drift=0;v.travelHeading=v.heading;v.steer=0;v.reverseWait=0;v.gamma=0;v.theta=0;v.bank=0;v.pitch=0;v.roll=0;orbit=0;pitch=.3;chaseHeading=v.heading;lookIdle=0;firstPersonLook.yaw=0;firstPersonLook.pitch=-.08;},exit,
+    enter(v){active=v;v.speed=v.coasting?v.speed:0;v.coasting=false;v.yawRate=0;v.drift=0;v.travelHeading=v.heading;v.steer=0;v.reverseWait=0;v.gamma=0;v.theta=0;v.bank=0;v.pitch=0;v.roll=0;v.crashed=false;orbit=0;pitch=.3;chaseHeading=v.heading;lookIdle=0;firstPersonLook.yaw=0;firstPersonLook.pitch=-.08;},exit,
     stop(){if(active)active.speed=0;active=null;},
     look(dx,dy,firstPerson=false){if(firstPerson){firstPersonLook.yaw=T.MathUtils.clamp(firstPersonLook.yaw-dx*.0025,-2.65,2.65);firstPersonLook.pitch=T.MathUtils.clamp(firstPersonLook.pitch-dy*.0025,-1.1,.9);return;}orbit-=dx*.0025;pitch=T.MathUtils.clamp(pitch+dy*.002,-.05,.9);lookIdle=1.5;},
     blocks(x,z,r=.35,y=surface(x,z)){return items.some(v=>{if(y+1.7<v.y||y>v.y+(VEHICLES[v.type].height||2))return false;const dx=x-v.x,dz=z-v.z,c=VEHICLES[v.type],side=dx*Math.cos(v.heading)-dz*Math.sin(v.heading),along=dx*Math.sin(v.heading)+dz*Math.cos(v.heading);return Math.abs(side)<c.radius+r&&Math.abs(along)<c.length/2+r;});},
