@@ -93,18 +93,28 @@ export function createCityView(scene,invalidate=()=>{},{background=true}={}){
     if(roadY!==undefined)return roadY;
     return ground(x,z);
   }
+  function miter(points){
+    const unit=(a,b)=>{const dx=b[0]-a[0],dz=b[2]-a[2],n=Math.hypot(dx,dz);return n>1e-6?[dx/n,dz/n]:null;};
+    return points.map((p,i)=>{
+      const d1=i?unit(points[i-1],p):null,d2=i<points.length-1?unit(p,points[i+1]):null;
+      const n1=d1?[-d1[1],d1[0]]:[-d2[1],d2[0]],n2=d2?[-d2[1],d2[0]]:n1;
+      let x=n1[0]+n2[0],z=n1[1]+n2[1];const length=Math.hypot(x,z);if(length<1e-6)return [n1[0],n1[1]];x/=length;z/=length;
+      const scale=1/Math.max(.25,Math.abs(x*n1[0]+z*n1[1]));
+      return [x*scale,z*scale];
+    });
+  }
   function ribbon(points,width,material,lift=0,depth=0){
     if(material===walkMat&&width>2*SIDEWALK_WIDTH){
       lift+=CURB_HEIGHT;
-      const vertices=[],indices=[],offsets=[-width/2,-width/2+SIDEWALK_WIDTH,width/2-SIDEWALK_WIDTH,width/2];
-      for(let i=0;i<points.length;i++){const p=points[i],a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],dx=b[0]-a[0],dz=b[2]-a[2],length=Math.hypot(dx,dz)||1;
-        for(const offset of offsets)vertices.push(p[0]-origin.x*70-dz/length*offset,p[1]+lift,p[2]-origin.z*70+dx/length*offset);
+      const vertices=[],indices=[],offsets=[-width/2,-width/2+SIDEWALK_WIDTH,width/2-SIDEWALK_WIDTH,width/2],edges=miter(points);
+      for(let i=0;i<points.length;i++){const p=points[i],[mx,mz]=edges[i];
+        for(const offset of offsets)vertices.push(p[0]-origin.x*70+mx*offset,p[1]+lift,p[2]-origin.z*70+mz*offset);
         if(i)for(const side of [0,2]){const k=i*4+side;indices.push(k-4,k-3,k,k-3,k+1,k);}
       }
       const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();
       const mesh=new THREE.Mesh(geometry,material);mesh.receiveShadow=true;pave(mesh);group.add(mesh);return;
     }
-const vertices=[],indices=[];for(let i=0;i<points.length;i++){const p=points[i],a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],dx=b[0]-a[0],dz=b[2]-a[2],n=Math.hypot(dx,dz)||1;for(const side of [-1,1])vertices.push(p[0]-origin.x*70-dz/n*width/2*side,p[1]+lift,p[2]-origin.z*70+dx/n*width/2*side);if(i){const k=i*2;indices.push(k-2,k-1,k,k-1,k+1,k);}}
+const vertices=[],indices=[],edges=miter(points);for(let i=0;i<points.length;i++){const p=points[i],[mx,mz]=edges[i];for(const side of [-1,1])vertices.push(p[0]-origin.x*70+mx*width/2*side,p[1]+lift,p[2]-origin.z*70+mz*width/2*side);if(i){const k=i*2;indices.push(k-2,k-1,k,k-1,k+1,k);}}
     if(depth){const count=vertices.length/3;for(let i=0;i<count;i++)vertices.push(vertices[i*3],vertices[i*3+1]-depth,vertices[i*3+2]);for(let i=2;i<count;i+=2){indices.push(i-2,i,i+count,i-2,i+count,i-2+count,i-1,i-1+count,i+1+count,i-1,i+1+count,i+1,i-2+count,i+count,i-1+count,i-1+count,i+count,i+1+count);}indices.push(0,count,1,1,count,count+1,count-2,count-1,count*2-2,count-1,count*2-1,count*2-2);}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.setIndex(indices);g.computeVertexNormals();const mesh=new THREE.Mesh(g,material);mesh.receiveShadow=true;pave(mesh);group.add(mesh);
   }
@@ -139,10 +149,11 @@ const vertices=[],indices=[];for(let i=0;i<points.length;i++){const p=points[i],
     const readyMeshes=prepared?.id===requestId?prepared:null;const readyMarkings=prepared?.id===requestId?prepared.result:null;prepared=null;requested=null;key=stamp;meshOrigin={x,z};group.position.set(0,0,0);
     for(const child of [...group.children]){child.geometry.dispose();group.remove(child);}
     if(readyMeshes?.meshes){junctionPatches=readyMeshes.patches;lampPositions=readyMeshes.lamps||[];streetCollision.set(lampPositions);for(const mesh of unpackCityMeshes(readyMeshes.meshes,[roadMat,walkMat,padMat,freeMat,ownedMat,bridgeMat,railMat,yellowMat,whiteMat,poleMat,lampMat]))group.add(mesh);group.userData.backgroundBuildMs=readyMeshes.buildMs;invalidate();return;}
-    const drawnCrossings=new Set(),caps=new Map(),visibleRoads=[];
+    const drawnCrossings=new Set(),caps=new Map(),visibleRoads=[],
+      cap=(p,width)=>{const key=p[0]+','+p[2],existing=caps.get(key);if(!existing||width>existing.width)caps.set(key,{p,width});};
     for(const road of planning.roads){if(!road.points.some(p=>Math.abs(p[0]-x*70)<850&&Math.abs(p[2]-z*70)<850))continue;
       visibleRoads.push(road);
-      if(road.sections){for(const section of road.sections){if(section.kind==='crossing'){if(drawnCrossings.has(section.id))continue;drawnCrossings.add(section.id);crossing(section,section.width);}else{for(let i=0;i<section.points.length;i++){const p=section.points[i],a=section.points[i-1],b=section.points[i+1];if(!a||!b||((p[0]-a[0])*(b[0]-p[0])+(p[2]-a[2])*(b[2]-p[2]))/Math.hypot(p[0]-a[0],p[2]-a[2])/Math.hypot(b[0]-p[0],b[2]-p[2])<.97)caps.set(p[0]+','+p[2],{p,width:road.width});}}const width=section.width||road.width,material=roadMat;ribbon(section.points,width+2*SIDEWALK_WIDTH,walkMat);ribbon(section.points,width,material,.012);}continue;}
+      if(road.sections){for(const section of road.sections){if(section.kind==='crossing'){if(drawnCrossings.has(section.id))continue;drawnCrossings.add(section.id);crossing(section,section.width);cap(section.points[0],section.width);cap(section.points.at(-1),section.width);}else{for(let i=0;i<section.points.length;i++){const p=section.points[i],a=section.points[i-1],b=section.points[i+1];if(!a||!b||((p[0]-a[0])*(b[0]-p[0])+(p[2]-a[2])*(b[2]-p[2]))/Math.hypot(p[0]-a[0],p[2]-a[2])/Math.hypot(b[0]-p[0],b[2]-p[2])<.97)cap(p,road.width);}}const width=section.width||road.width,material=roadMat;ribbon(section.points,width+2*SIDEWALK_WIDTH,walkMat);ribbon(section.points,width,material,.012);}continue;}
       ribbon(road.points,road.width+2*SIDEWALK_WIDTH,walkMat);ribbon(road.points,road.width,roadMat,.012);
       if(road.bridge){for(const side of [-1,1]){const rail=road.points.filter(p=>ground(p[0],p[2])<1);if(rail.length>1){const points=rail.map((p,i)=>{const a=rail[Math.max(0,i-1)],b=rail[Math.min(rail.length-1,i+1)],dx=b[0]-a[0],dz=b[2]-a[2],n=Math.hypot(dx,dz);return [p[0]-dz/n*(road.width/2+SIDEWALK_WIDTH-.4)*side,p[1]+.8,p[2]+dx/n*(road.width/2+SIDEWALK_WIDTH-.4)*side];});ribbon(points,.15,walkMat);}}}
     }

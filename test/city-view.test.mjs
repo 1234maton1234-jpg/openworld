@@ -79,6 +79,31 @@ test('concave polygon foundation rendering and picking preserve its notch',()=>{
   const mesh=view.objects.find(o=>o.isMesh&&o.material.name==='grass');assert.ok(mesh);const ray=new THREE.Raycaster(new THREE.Vector3(16,50,16),new THREE.Vector3(0,-1,0));mesh.updateMatrixWorld();assert.equal(ray.intersectObject(mesh).length,0);
 });
 
+test('ribbon mitres reach the true carriageway edge at sharp corners',()=>{
+  const view=createCityView(new THREE.Scene()),points=[[-120,4,0],[0,4,0],[0,4,120]];
+  view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[{id:'corner',width:18,points}]},[]);
+  const asphalt=view.objects.filter(o=>o.material?.name==='asphalt');assert.ok(asphalt.length);
+  for(const mesh of asphalt)mesh.updateMatrixWorld();
+  const ray=new THREE.Raycaster();
+  for(const [x,z] of [[-100,8.9],[-100,-8.9],[8.9,100],[-8.9,100],[-8.5,8.5],[-8,8],[8,-8],[-8.9,-8.9],[8.9,8.9],[-8.5,0.5]]){
+    ray.set(new THREE.Vector3(x,30,z),new THREE.Vector3(0,-1,0));
+    const hit=ray.intersectObjects(asphalt,false)[0];
+    assert.ok(hit,`carriageway at ${x},${z} has no asphalt`);assert.ok(Math.abs(hit.point.y-4.012)<.05);
+  }
+});
+test('a road join cap is as wide as the widest road meeting there',()=>{
+  const view=createCityView(new THREE.Scene()),approach=[[-100,4,0],[0,4,0]],deck=[[0,4,0],[100,4,0]];
+  view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[{id:'road',width:18,points:[[-100,4,0],[0,4,0],[100,4,0]],sections:[
+    {kind:'land',width:18,points:approach},
+    {kind:'crossing',width:28,points:deck,deckStart:0,deckEnd:1}
+  ]}]},[]);
+  const walks=view.objects.filter(o=>o.userData.sidewalk);for(const mesh of walks)mesh.updateMatrixWorld();
+  assert.ok(walks.length);
+  const ray=new THREE.Raycaster(new THREE.Vector3(-2,30,16),new THREE.Vector3(0,-1,0));
+  const hit=ray.intersectObjects(walks,false)[0];
+  assert.ok(hit,`the bridgehead sidewalk band is unpaved 16 m from the join, so the cap is narrower than the ${28} m bridge`);
+  assert.ok(Math.abs(hit.point.y-4.25)<.05);
+});
 test('junction infill has upward normals and a matching walkable surface',()=>{
   const view=createCityView(new THREE.Scene());
   view.rebuild(0,0,{regions:[],lots:[],parks:[],legacy:[],roads:[{id:'a',width:16,points:[[-100,4,0],[100,4,0]]},{id:'b',width:10,points:[[-80,4,-60],[80,4,60]]}]},[]);
